@@ -68,8 +68,7 @@ add_executable(CoreLayer main.cpp
         src/utils/Interpolation/Interpolator/LinearInterpolator/LinearInterpolator.h
         src/utils/Interpolation/IBilinearInterpolator/BilinearInterpolator/BilinearInterpolator.cpp
         src/utils/Interpolation/IBilinearInterpolator/BilinearInterpolator/BilinearInterpolator.h
-        src/utils/DataTable/IDataTable2D/DataTable2D.h
-        src/utils/DataTable/IDataTable1D/IDataTable1D.h
-        src/utils/DataTable/IDataTable1D/DataTable1D_fromCSV/DataTable1D_fromCSV.cpp
-        src/utils/DataTable/IDataTable1D/DataTable1D_fromCSV/DataTable1D_fromCSV.h
+        src/utils/DataTable/DataTable1D/DataTable1D_fromCSV.cpp
+        src/utils/DataTable/DataTable1D/DataTable1D_fromCSV.h
+        src/utils/DataTable/IDataTable.h
 )
