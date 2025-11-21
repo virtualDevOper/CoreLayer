@@ -62,13 +62,15 @@ add_executable(CoreLayer main.cpp
         src/PhysicalObjects/ObjectManager.h
         src/utils/SimulationDescriber.h
         src/utils/ContinuationCallback.h
-        src/utils/Interpolation/Interpolator/IInterpolator.h
+        src/utils/Interpolation/ILinearInterpolator/ILinearInterpolator.h
         "src/utils/Interpolation/IBilinearInterpolator /IBilinearInterpolator.h"
-        src/utils/Interpolation/Interpolator/LinearInterpolator/LinearInterpolator.cpp
-        src/utils/Interpolation/Interpolator/LinearInterpolator/LinearInterpolator.h
+        src/utils/Interpolation/ILinearInterpolator/LinearInterpolator/LinearInterpolator.cpp
+        src/utils/Interpolation/ILinearInterpolator/LinearInterpolator/LinearInterpolator.h
         src/utils/Interpolation/IBilinearInterpolator/BilinearInterpolator/BilinearInterpolator.cpp
         src/utils/Interpolation/IBilinearInterpolator/BilinearInterpolator/BilinearInterpolator.h
-        src/utils/DataTable/DataTable1D/DataTable1D_fromCSV.cpp
-        src/utils/DataTable/DataTable1D/DataTable1D_fromCSV.h
-        src/utils/DataTable/IDataTable.h
+        src/utils/DataTable/DataTable1D/uploader1D_fromTXT.cpp
+        src/utils/DataTable/DataTable1D/uploader1D_fromTXT.h
+        src/utils/DataTable/IDataUploader.h
+        src/utils/DataTable/DataTable2D/uploader2D_fromTXT.cpp
+        src/utils/DataTable/DataTable2D/uploader2D_fromTXT.h
 )

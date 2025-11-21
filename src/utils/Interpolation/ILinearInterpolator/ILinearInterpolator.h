@@ -4,9 +4,9 @@
 #pragma once
 
 template<typename metricType>
-class IInterpolator {
+class ILinearInterpolator {
 public:
-    virtual ~IInterpolator() = default;
+    virtual ~ILinearInterpolator() = default;
     virtual metricType interpolate(metricType x) const = 0;
 };
 

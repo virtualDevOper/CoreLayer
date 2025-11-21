@@ -1,0 +1,20 @@
+//
+// Created by 4NR_Operator_3 on 21.11.2025.
+//
+
+#pragma once
+#include "../../../PCH.h"
+#include "../Interpolation/ILinearInterpolator/ILinearInterpolator.h"
+
+template<typename metricType>
+class IDataUploader {
+public:
+    IDataUploader() = default;
+    virtual ~IDataUploader() = default;
+    IDataUploader(const IDataUploader&) = delete;
+    IDataUploader& operator=(const IDataUploader&) = default;
+    IDataUploader(IDataUploader&&) = default;
+    IDataUploader& operator=(IDataUploader&&) = default;
+    virtual std::unique_ptr<ILinearInterpolator<metricType>> loadFromFile() = 0;
+
+};
