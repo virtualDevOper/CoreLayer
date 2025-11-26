@@ -19,9 +19,7 @@
 #include "src/utils/SimulationDescriber.h"
 #include "src/utils/ContinuationCallback.h"
 #include "src/utils/DataTable/DataTable1D/uploader1D_fromTXT.h"
-
-
-
+#include "src/utils/DataTable/DataTable2D/uploader2D_fromTXT.h"
 
 
 //TODO
@@ -31,8 +29,6 @@
 int main() {
     /*
     auto solver = std::make_shared<RungeKutta4Solver<GLOBAL_CONFIG::PROJECT_TYPE, GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE>>();
-
-
 
     auto manager = std::make_shared<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
 
@@ -84,9 +80,13 @@ int main() {
     std::vector<StateStorage<GLOBAL_CONFIG::PROJECT_TYPE>> trackedObjects;
     csvDataSaver->addTrackedObjs(std::move(trackedObjects));*/
 
-    auto Fx_t_data = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/Fx_t.txt");
+    auto Fx_t_data = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Fx_t.txt");
     auto data  = Fx_t_data.loadFromFile();
     auto e = data->interpolate(1);
+    /*проверить биленейную интерполяцию*/
+    auto Cx_data = uploader2D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Cx_a_m.txt");
+    auto i = Cx_data.loadFromFile();
+    auto t = i->interpolate(0.8, 0);
     auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>();
     /*auto golubka_V1_init_params = std::make_shared<ObjInitParams<GLOBAL_CONFIG::PROJECT_TYPE>>();
     auto golubka_V1_aero_input = std::make_shared<AeroInput<GLOBAL_CONFIG::PROJECT_TYPE>>();

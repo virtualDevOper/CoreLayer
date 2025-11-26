@@ -20,7 +20,7 @@
  */
 
 template<typename metricType>
-class uploader1D_fromTXT final:public IDataUploader<metricType> {
+class uploader1D_fromTXT final:public IDataUploader<metricType,ILinearInterpolator<metricType>> {
 protected:
     const std::string filename_;
 public:

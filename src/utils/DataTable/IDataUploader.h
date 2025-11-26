@@ -6,7 +6,7 @@
 #include "../../../PCH.h"
 #include "../Interpolation/ILinearInterpolator/ILinearInterpolator.h"
 
-template<typename metricType>
+template<typename metricType, typename InterpolationType>
 class IDataUploader {
 public:
     IDataUploader() = default;
@@ -15,6 +15,6 @@ public:
     IDataUploader& operator=(const IDataUploader&) = default;
     IDataUploader(IDataUploader&&) = default;
     IDataUploader& operator=(IDataUploader&&) = default;
-    virtual std::unique_ptr<ILinearInterpolator<metricType>> loadFromFile() = 0;
+    virtual std::unique_ptr<InterpolationType> loadFromFile() = 0;
 
 };
