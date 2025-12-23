@@ -1,8 +1,9 @@
-/*
+
 //
 // Created by 4NR_Operator_3 on 06.10.2025.
 //
 
+#pragma once
 #pragma once
 #include "../utils/ObjSnapshot.h"
 
@@ -13,17 +14,39 @@
  *
 * \details  Реализует специализацию паттерна "Хранитель" для захвата и сохранения
  * последовательных снимков состояния определенного ЛА
- #1#
+*/
+
+
+
+
 
 template <typename MetricType>
 class StateStorage {
 public:
     StateStorage(const StateStorage&) = delete;
     StateStorage& operator=(const StateStorage&) = delete;
-    explicit StateStorage(const int id): id_(id){};
-    void addState(ObjSnapshot<MetricType>&& snapshot){states_.push_back(snapshot);};
-    const std::vector<ObjSnapshot<MetricType>>& getStates() const{return states_;}
-    [[nodiscard]] int getId() const{return id_;}
+
+    explicit StateStorage(int id) : id_(id) {}
+
+    StateStorage(StateStorage&& other) noexcept
+        : id_(other.id_), states_(std::move(other.states_)) {}
+
+    // Две версии addState для разных случаев
+    void addState(const ObjSnapshot<MetricType>& snapshot) {
+        states_.push_back(snapshot);
+    }
+
+    void addState(ObjSnapshot<MetricType>&& snapshot) {
+        states_.push_back(std::move(snapshot));
+    }
+
+    void addState(std::unique_ptr<ObjSnapshot<MetricType>> snapshot) {
+        states_.push_back(std::move(*snapshot));
+    }
+
+    const std::vector<ObjSnapshot<MetricType>>& getStates() const { return states_; }
+    [[nodiscard]] int getId() const { return id_; }
+
 private:
     int id_;
     std::vector<ObjSnapshot<MetricType>> states_;
@@ -33,7 +56,8 @@ private:
 // #include "StateStorage.tpp"
 
 
-/#1#/ В коде SimulationMomento:
+/*
+/#2#/ В коде SimulationMomento:
 auto momento = std::make_unique<SimulationMomento<double>>();
 // Устанавливаем стратегию сохранения в CSV
 momento->setStrategy(std::make_unique<CsvSaveStrategy<double>>("simulation_data.csv"));
@@ -50,7 +74,8 @@ trackedObjects.push_back(std::move(obj1));
 trackedObjects.push_back(std::move(obj2));
 momento->addTrackedObjs(std::move(trackedObjects));
 // Сохраняем в CSV
-momento->save();#1#
+momento->save();#2#
+#1#
 */
 
 

@@ -1,4 +1,4 @@
-/*//
+//
 // Created by 4NR_Operator_3 on 16.09.2025.
 //
 #pragma once
@@ -20,10 +20,11 @@ public:
         metricType step_size,
         CallbackType continue_callback,
         std::shared_ptr<SimulationMomento<metricType>> momento
-        ) = 0;
+    ) = 0;
 
 protected:
-    std::vector<int> checkCollisions(std::vector<StateStorage<metricType>>& stateStorages) {
+    std::vector<int> checkCollisions(const std::vector<StateStorage<metricType>>& stateStorages) {
+        // TODO: Реализовать проверку коллизий
         return {};
     }
-};*/
+};

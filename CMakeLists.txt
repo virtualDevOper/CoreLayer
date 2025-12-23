@@ -34,10 +34,6 @@ add_executable(CoreLayer main.cpp
         src/WorldModel/WorldComponents/ITerrainModel/ITerrainModel.h
         src/WorldModel/WorldComponents/ITerrainModel/PlaneTerrain/PlaneTerrain.tpp
         src/WorldModel/WorldComponents/ITerrainModel/PlaneTerrain/PlaneTerrain.h
-        src/PhysicalObjects/Target/Target.cpp
-        src/PhysicalObjects/Target/Target.h
-        src/PhysicalObjects/Target/SimpleTarget/SimpleTarget.cpp
-        src/PhysicalObjects/Target/SimpleTarget/SimpleTarget.h
         src/PhysicalObjects/Aircraft/AbstractAircraft.cpp
         src/PhysicalObjects/Aircraft/AbstractAircraft.h
         src/SimulationMomento/SimulationMomento.cpp
@@ -46,16 +42,13 @@ add_executable(CoreLayer main.cpp
         src/SimulationMomento/SaveStrategy/SaveStrategy.cpp
         src/SimulationMomento/SaveStrategy/SaveStrategy.h
         src/SimulationMomento/StateStorage.h
-        src/PhysicalObjects/RandomObject/RandomObject.cpp
-        src/PhysicalObjects/RandomObject/RandomObject.h
         src/PhysicalObjects/AbstractObject.cpp
         src/PhysicalObjects/AbstractObject.h
         src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.cpp
         src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/FullModel/FullModel.cpp
         src/DynamicsSystem/ExtensionModels/Aerodinamics/FullModel/FullModel.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/AeroInput.cpp
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/AeroInput.h
+        src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/RocketAeroInput.h
         src/utils/ObjInitParams.h
         GLOBAL_CONFIG.h
         src/PhysicalObjects/ObjectManager.cpp
@@ -73,4 +66,9 @@ add_executable(CoreLayer main.cpp
         src/utils/DataTable/IDataUploader.h
         src/utils/DataTable/DataTable2D/uploader2D_fromTXT.cpp
         src/utils/DataTable/DataTable2D/uploader2D_fromTXT.h
+        src/PhysicalObjects/Aircraft/Missle/GuidedMissle/GuidedMissle.h
+        src/DynamicsSystem/SimpleKinematicsSystem/SimpleKinematicsSystem.cpp
+        src/DynamicsSystem/SimpleKinematicsSystem/SimpleKinematicsSystem.h
+        src/PhysicalObjects/SimpleObject/SimpleObject.cpp
+        src/PhysicalObjects/SimpleObject/SimpleObject.h
 )

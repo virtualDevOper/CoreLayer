@@ -5,6 +5,9 @@
 #pragma once
 #include "../utils/ObjSnapshot.h"
 
+
+
+//по идее вот тут должны точно силы быть масса скорость
 template <typename metricType>
 class IDynamicsSystem {
 public:

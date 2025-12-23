@@ -12,7 +12,7 @@ class FullRocketODE final :public IDynamicsSystem<metricType> {
 public:
     std::string get_description() override {
         return "Полная система ОДУ для ЛА, учитывающая динамику твердого тела,"
-               " аэродинамические силы, тягу двигателя и гравитацию";
+               " аэродинамические силы, тягу двигателя/лей и гравитацию";
     }
 
     std::unique_ptr<ObjSnapshot<metricType>> get_rhs_derivatives(
@@ -26,11 +26,12 @@ public:
             .setVelocity(previous_state.getVelocity() + derivatives.velocity)
             .setEulerAngles(previous_state.getEulerAngles() + derivatives.eulerAngles)
             .setAngularVelocity(previous_state.getAngularVelocity() + derivatives.angular_velocity)
+они сами не интерполируются, а интерполируются их составляющие
             .setTotalForce(interpolatedValues.total_force)
             .setTotalMoment(interpolatedValues.total_moment)
             .setInertia(interpolatedValues.inertia)
             .setMass(interpolatedValues.mass)
-                .build();
+                .buildUnique();
     }
 
 private:
@@ -66,17 +67,22 @@ private:
         derivatives.position = prev_velocity;// тут в земную систему координат перевести нужно(умножить на матрицу направляющих косинусов)
         derivatives.velocity = compute_velocity(prev_velocity,prev_angularVel, InterpolatedValues.total_force, InterpolatedValues.mass);
         derivatives.angular_velocity = compute_angular_velocity(InterpolatedValues.total_moment,InterpolatedValues.inertia,prev_angularVel);
-        derivatives.eulerAngles = compute_angular_acceleration(prev_eulerAngles,prev_angularVel);
+        derivatives.eulerAngles = compute_eulerAngles(prev_eulerAngles,prev_angularVel);
 
         return {derivatives, InterpolatedValues};
     }
 
     //вот тут подумать бы насчет того, как хранить и где хранить интерполируемые величины
     // и не забывай все
+
+    //систему нужно реализовать
+
+
      Eigen::Vector3<metricType> compute_inertia(metricType t) {
         Eigen::Vector3<metricType> res = Eigen::Matrix<metricType, 3, 1>::Zero();
         return res;
     }
+
     metricType compute_mass(metricType t) {
         return 0.0;
     }
@@ -97,7 +103,7 @@ private:
         const Eigen::Vector3<metricType>& prev_angularVel ) {
         return Eigen::Matrix<metricType, 3, 1>::Zero();
     }
-    Eigen::Vector3<metricType> compute_angular_acceleration( const Eigen::Vector3<metricType>& prev_eulerAngles,
+    Eigen::Vector3<metricType> compute_eulerAngles( const Eigen::Vector3<metricType>& prev_eulerAngles,
         const Eigen::Vector3<metricType>& prev_angularVel ) {
         return Eigen::Matrix<metricType, 3, 1>::Zero();
     }

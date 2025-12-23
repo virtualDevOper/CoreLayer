@@ -1,4 +1,3 @@
-/*
 //
 // Created by 4NR_Operator_3 on 16.09.2025.
 //
@@ -19,18 +18,38 @@ IModel<metricType, CallbackType>::IModel(
       simulationData_(std::move(dataSaver)),
       simulationDescriber_(std::move(describer)),
       obj_manager_(std::move(manager)),
-      continue_callback_(continue_callback),
+      continue_callback_(std::move(continue_callback)),
       dt_(dt)
-{};
+{
+    if (!odeSolver_) {throw std::invalid_argument("IModel: solver is null");}
+    if (!worldModel_) {throw std::invalid_argument("IModel: world model is null");}
+    if (!obj_manager_) {throw std::invalid_argument("IModel: object manager is null");}
+};
 
 template <typename metricType, typename CallbackType>
 void IModel<metricType, CallbackType>::run() {
-    try {this->odeSolver_->solve(
+    try {
+        if (simulationDescriber_) {
+            std::cout << "start time: " << simulationDescriber_->start_time << std::endl;
+            std::cout << "operator name: " << simulationDescriber_->operator_name << std::endl;
+            std::cout <<"ode solver: " << simulationDescriber_->ode_solver << std::endl;
+            std::cout <<"world config: " << simulationDescriber_->world_config << std::endl;
+            std::cout <<"data saver: " << simulationDescriber_->data_saver << std::endl;
+            std::cout <<"earth type: " << simulationDescriber_->earth_type << std::endl;
+            for (auto &obj: simulationDescriber_->simulation_objects) {
+                std::cout << obj << " ";
+            }
+            std::cout << std::endl;
+        }
+        this->odeSolver_->solve(
         obj_manager_, 0, dt_, continue_callback_,simulationData_
         );
+        /*auto end_time = std::chrono::system_clock::to_time_t(
+        std::chrono::system_clock::now() + std::chrono::hours(simulationDescriber_->utc_offset_));
+        и тут посчитай затраченное время
+        */
     } catch (const std::exception& e) {std::cerr << "Ошибка: " << e.what() << std::endl;}
 }
-*/
 
 
 

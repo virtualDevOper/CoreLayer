@@ -1,11 +1,11 @@
-/*//
+//
 // Created by 4NR_Operator_3 on 13.10.2025.
 //
 
 #pragma once
 
 template <typename metricType>
-struct AeroInput {
+struct RocketAeroInput {
 
     metricType L = 0.0;
     metricType D_mid = 0.0;
@@ -33,4 +33,4 @@ struct AeroInput {
     metricType X_p_kr_p = 0.0;
     metricType X_ov_p = 0.0;
     metricType b_sah_p = 0.0;
-};*/
+};

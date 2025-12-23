@@ -7,6 +7,7 @@
 
 
 struct SimulationDescriber {
+    int utc_offset_{0};
     std::time_t start_time{0};
     std::string operator_name{"undefined"};
     std::string ode_solver{"undefined"};
@@ -14,8 +15,10 @@ struct SimulationDescriber {
     std::string data_saver{"undefined"};
     std::vector<std::string> simulation_objects{};
     std::string earth_type{"undefined"};
+
     double time_step{0.0};
-    explicit SimulationDescriber(const int utc_offset) {
+    explicit SimulationDescriber(int utc_offset) {
+        utc_offset_ = utc_offset;
         start_time = std::chrono::system_clock::to_time_t(
         std::chrono::system_clock::now() + std::chrono::hours(utc_offset));
      }

@@ -19,7 +19,7 @@
 #include <cstdint>
 #include <utility>
 #include "CONSTANTS.h"
-#include "GLOBAL_CONFIG.h"
+
 #include <unordered_map>
 #include <atomic>
 #include <mutex>

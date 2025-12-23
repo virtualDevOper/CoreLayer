@@ -3,6 +3,8 @@
 //
 
 #pragma once
+#include <utility>
+
 #include "../StateStorage.h"
 #include "../../../PCH.h"
 
@@ -16,7 +18,7 @@ public:
 template <typename metricType>
 class CsvSaveStrategy final : public SaveStrategy<metricType> {
 public:
-    explicit CsvSaveStrategy(const std::string& filename): filename_(filename) {}
+    explicit CsvSaveStrategy(std::string  filename): filename_(std::move(filename)) {}
 
     void save(const std::vector<StateStorage<metricType>>& data) override {
         // Открываем файл для записи (перезаписываем)
