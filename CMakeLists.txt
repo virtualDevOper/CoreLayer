@@ -56,7 +56,7 @@ add_executable(CoreLayer main.cpp
         src/utils/SimulationDescriber.h
         src/utils/ContinuationCallback.h
         src/utils/Interpolation/ILinearInterpolator/ILinearInterpolator.h
-        "src/utils/Interpolation/IBilinearInterpolator /IBilinearInterpolator.h"
+        src/utils/Interpolation/IBilinearInterpolator /IBilinearInterpolator.h
         src/utils/Interpolation/ILinearInterpolator/LinearInterpolator/LinearInterpolator.cpp
         src/utils/Interpolation/ILinearInterpolator/LinearInterpolator/LinearInterpolator.h
         src/utils/Interpolation/IBilinearInterpolator/BilinearInterpolator/BilinearInterpolator.cpp
@@ -71,4 +71,8 @@ add_executable(CoreLayer main.cpp
         src/DynamicsSystem/SimpleKinematicsSystem/SimpleKinematicsSystem.h
         src/PhysicalObjects/SimpleObject/SimpleObject.cpp
         src/PhysicalObjects/SimpleObject/SimpleObject.h
+        src/utils/Interpolation/ComponentInterpolationManager.cpp
+        src/utils/Interpolation/ComponentInterpolationManager.h
+        src/utils/ConeDirection/ConeDirection.cpp
+        src/utils/ConeDirection/ConeDirection.h
 )

@@ -8,5 +8,5 @@ template<typename metricType>
 class IBilinearInterpolator {
 public:
     virtual ~IBilinearInterpolator() = default;
-    virtual metricType interpolate(metricType x, const metricType y) const = 0;
+    virtual metricType interpolate(metricType x, metricType y) const = 0;
 };

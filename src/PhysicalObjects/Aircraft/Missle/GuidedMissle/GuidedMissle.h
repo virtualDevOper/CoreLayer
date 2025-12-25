@@ -18,16 +18,58 @@
  */
 
 template <typename metricType, typename AeroInput>
-class GuidedMissle : public AbstractAircraft<metricType, AeroInput>{
+class GuidedMissle : public AbstractAircraft<metricType, AeroInput> {
 public:
-    explicit GuidedMissle(std::unique_ptr<IDynamicsSystem<metricType>> sys,
-                    std::unique_ptr<ObjInitParams<metricType>> initial_params,
-                                std::unique_ptr<AeroInput> aero_input
-                                )
-            : AbstractAircraft<metricType, AeroInput>(std::move(sys), std::move(initial_params), std::move(aero_input)){};
+    explicit GuidedMissle(
+        std::unique_ptr<IDynamicsSystem<metricType>> sys,
+        std::unique_ptr<ObjInitParams<metricType>> initial_params,
+        std::unique_ptr<AeroInput> aero_input,
+        std::unique_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr)
+        : AbstractAircraft<metricType, AeroInput>(
+            std::move(sys),
+            std::move(initial_params),
+            std::move(aero_input),
+            std::move(comp_interp_mgr)) {}
 
-    virtual Eigen::Vector3<metricType> getGyroscopeAngularVelocity() const = 0;
-    virtual Eigen::Vector3<metricType> getAccelerometerAngularAcceleration() const = 0;
-    virtual void autopilot() const = 0;
+    virtual ~GuidedMissle() = default;
 
+    // === ДАТЧИКИ БИНС ===
+    virtual Eigen::Vector3<metricType> getGyroscopeAngularVelocity(metricType t) const = 0;
+    virtual Eigen::Vector3<metricType> getAccelerometerAcceleration(metricType t) const = 0;
+
+    // === АВТОПИЛОТ ===
+    virtual void autopilot(metricType t) = 0;
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
