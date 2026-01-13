@@ -8,7 +8,7 @@
 template <typename metricType>
 class ICoriolisModel {
     public:
-    virtual Eigen::Vector3<metricType> getCoriolisForse(const Eigen::Vector3<metricType> r) const = 0;
+    virtual Eigen::Vector3<metricType> getCoriolisForce(const Eigen::Vector3<metricType> r) const = 0;
     virtual ~ICoriolisModel()= default;
 };
 

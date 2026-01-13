@@ -31,7 +31,6 @@ public:
             std::move(aero_input),
             std::move(comp_interp_mgr)) {}
 
-    virtual ~GuidedMissle() = default;
 
     // === ДАТЧИКИ БИНС ===
     virtual Eigen::Vector3<metricType> getGyroscopeAngularVelocity(metricType t) const = 0;

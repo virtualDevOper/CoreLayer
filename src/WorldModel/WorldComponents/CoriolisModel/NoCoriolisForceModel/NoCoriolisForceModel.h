@@ -9,7 +9,7 @@
 template <typename metricType>
 class NoCoriolisForceModel final : public ICoriolisModel<metricType> {
     public:
-    Eigen::Vector3<metricType> getCoriolisForse(const Eigen::Vector3<metricType> r) const override;
+    Eigen::Vector3<metricType> getCoriolisForce(const Eigen::Vector3<metricType> r) const override;
 };
 
 #include "NoCoriolisForceModel.tpp"

@@ -1,12 +1,11 @@
 //
 // Created by 4NR_Operator_3 on 25.12.2025
-// CORRECT version based on PDF mathematical model
-// REFACTORED: Smart pointers everywhere
 //
 
 #pragma once
 #include "../IDynamicsSystem.h"
 #include "../../utils/ConeDirection/ConeDirection.h"
+#include "DynamicParametersProviderForFullRocketModel.h"
 
 
 
@@ -30,28 +29,32 @@
  * - dAngularVelocity/dt = (dω_x/dt, dω_y/dt, dω_z/dt) в связной СК(вот тут хз)
  */
 
+
+
 template <typename metricType>
 class FullRocketODE final : public IDynamicsSystem<metricType> {
 private:
-    std::shared_ptr<AbstractAircraft<metricType, RocketAeroInput<metricType>>> aircraft_;
+    std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> dataToODE_provider_;
+    std::shared_ptr<AbstractWorldModel<metricType>> world_;
 
 public:
     explicit FullRocketODE(
-        std::shared_ptr<AbstractAircraft<metricType, RocketAeroInput<metricType>>> aircraft)
-        : aircraft_(std::move(aircraft)) {
-        if (!aircraft_) {
-            throw std::invalid_argument("Указатель на ЛА не может быть null");
+        const std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>>& params_provider,
+        const std::shared_ptr<AbstractWorldModel<metricType>>& world
+        )
+        : params_provider_(params_provider),
+            world_(world) {
+        if (!params_provider_) {
+            throw std::invalid_argument("Поставщик параметров не может быть null");
         }
     }
 
-    std::string get_description() override {
-        return "Полная система ОДУ для ЛА (модель из диплома Ильи Берулавы 1-2025)";
-    }
+    std::string get_description() override {return "Полная система ОДУ для ЛА (модель из диплома Ильи Берулавы 1-2025)";}
 
     /**
      * \brief Вычисляет производные состояния
      *
-     * В соответствии с PDF:
+     * В соответствии с дипломом:
      * - dv_x/dt = -ω_y·v_z + ω_z·v_y + F_sum_x(t) / m(t)
      * - dv_y/dt = -ω_z·v_x + ω_x·v_z + F_sum_y(t) / m(t)
      * - dv_z/dt = -ω_x·v_y + ω_y·v_x + F_sum_z(t) / m(t)
@@ -68,6 +71,7 @@ public:
      * - dy_e/dt = v_ye
      * - dz_e/dt = v_ze
      */
+
     std::unique_ptr<ObjSnapshot<metricType>> get_rhs_derivatives(
         const ObjSnapshot<metricType>& previous_state,
         metricType t) override {
@@ -96,8 +100,8 @@ private:
         auto derivatives = std::make_unique<Derivatives>();
 
         // === ШАГ 1: ПОЛУЧИТЬ ПАРАМЕТРЫ ===
-        metricType mass = aircraft_->getMass(t);
-        auto inertia = aircraft_->getInertia(t);  // (I_x, I_y, I_z)
+        metricType mass = params_provider_->getMass(t);
+        auto inertia = params_provider_->getInertia(t);  // (I_x, I_y, I_z)
 
         // === ШАГ 2: ТРАНСФОРМИРОВАТЬ СКОРОСТЬ ИЗ ЗЕМНОЙ В СВЯЗНУЮ СК ===
         const auto& V_earth = state.getVelocity();  // (v_xe, v_ye, v_ze)
@@ -112,16 +116,21 @@ private:
         // === ШАГ 4: ВЫЧИСЛИТЬ АЭРОДИНАМИЧЕСКИЕ УГЛЫ ===
         metricType alpha_p = computeSpaceAngleOfAttack(V_body);
         metricType phi_p = computeAerodynamicRollAngle(V_body);
+
+        //TODO
+        // == эти параметры вычисляются в абстрактном мире, исправь!!!
+
         metricType mach = computeMachNumber(V_body.norm());
         metricType rho = computeAirDensity(state);
 
         // === ШАГ 5: ПОЛУЧИТЬ АЭРОДИНАМИЧЕСКИЕ СИЛЫ И МОМЕНТЫ ===
         // Силы и моменты возвращаются в связной СК!
-        auto aero_forces_body = aircraft_->getAerodynamicForces(t);
-        auto aero_moments_body = aircraft_->getAerodynamicMoments(t);
+        // ну вот тут ты охуел
+        auto aero_forces_body = params_provider_->getAerodynamicForces(t);
+        auto aero_moments_body = params_provider_->getAerodynamicMoments(t);
 
         // === ШАГ 6: ПОЛУЧИТЬ ТЯГУ (уже в связной СК) ===
-        auto thrust_body = aircraft_->getThrust(t);
+        auto thrust_body = params_provider_->getThrust(t);
 
         // === ШАГ 7: СОСТАВИТЬ СУММАРНЫЕ СИЛЫ В СВЯЗНОЙ СК ===
         auto F_sum_body = computeTotalForces(
@@ -222,15 +231,10 @@ private:
     }
 
     metricType computeMachNumber(metricType V_magnitude) const {
-        return V_magnitude / 340.0;  // [м/с] скорость звука
+        return V_magnitude / world_->getAtmosphericModel()->getSpeedOfSound();  // [м/с] скорость звука
     }
 
-    metricType computeAirDensity(const ObjSnapshot<metricType>& state) const {
-        metricType z = state.getPosition()(2);
-        metricType rho_0 = 1.225;  // [кг/м³] на уровне моря
-        metricType H = 8500.0;     // [м] масштабная высота
-        return rho_0 * std::exp(-z / H);
-    }
+
 
     /**
      * \brief Суммарные силы в связной СК (включая гравитацию)
@@ -244,7 +248,7 @@ private:
         const Eigen::Vector3<metricType>& euler) const {
 
         // Гравитация в земной СК: [0, -m·g, 0]
-        std::array<metricType, 3> gravity_array = {0, -mass * 9.81, 0};
+        std::array<metricType, 3> gravity_array = {0, -mass * PhysicsConstants::g, 0};
 
         auto gravity_transform = std::make_unique<Zemn_to_svyaz_Direction<metricType>>(
             euler(0), euler(1), euler(2), gravity_array);
@@ -285,7 +289,7 @@ private:
      *
      * dΨ/dt = (ω_y·cos(γ) - ω_z·sin(γ)) / cos(θ)
      * dγ/dt = ω_x - tg(θ)·(ω_y·cos(γ) - ω_z·sin(γ))
-     * dθ/dt = ω_y·sin(γ) + ω_z·cos(γ)   [ИСПРАВЛЕНО]
+     * dθ/dt = ω_y·sin(γ) + ω_z·cos(γ)   [ИСПРАВЛЕНО проверь!!!]
      */
     Eigen::Vector3<metricType> computeEulerAnglesDerivatives(
         const Eigen::Vector3<metricType>& euler,
@@ -329,6 +333,7 @@ private:
      * M_sum_x = I_x·dω_x/dt + (I_z - I_y)·ω_y·ω_z
      * => dω_x/dt = (M_sum_x - (I_z - I_y)·ω_y·ω_z) / I_x
      */
+
     Eigen::Vector3<metricType> computeAngularAccelerationBody(
         const Eigen::Vector3<metricType>& M_sum,
         const Eigen::Vector3<metricType>& inertia,

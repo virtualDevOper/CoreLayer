@@ -46,8 +46,9 @@ public:
 
     // === ДОСТУП К СОСТОЯНИЮ ===
     const ObjSnapshot<metricType>& getStateSnapshot() const {return *presentSnapshot_;}
-
     void updateSnapshot(std::unique_ptr<ObjSnapshot<metricType>> new_snapshot) {presentSnapshot_ = std::move(new_snapshot);}
+
+
 
     // === СТАТУС ОБЪЕКТА ===
     enum class ObjectState { ACTIVE, DESTROYED, COLLIDED };

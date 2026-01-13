@@ -46,8 +46,8 @@ add_executable(CoreLayer main.cpp
         src/PhysicalObjects/AbstractObject.h
         src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.cpp
         src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/FullModel/FullModel.cpp
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/FullModel/FullModel.h
+        src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModel.cpp
+        src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModel.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/RocketAeroInput.h
         src/utils/ObjInitParams.h
         GLOBAL_CONFIG.h
@@ -56,7 +56,7 @@ add_executable(CoreLayer main.cpp
         src/utils/SimulationDescriber.h
         src/utils/ContinuationCallback.h
         src/utils/Interpolation/ILinearInterpolator/ILinearInterpolator.h
-        src/utils/Interpolation/IBilinearInterpolator /IBilinearInterpolator.h
+        src/utils/Interpolation/IBilinearInterpolator/IBilinearInterpolator.h
         src/utils/Interpolation/ILinearInterpolator/LinearInterpolator/LinearInterpolator.cpp
         src/utils/Interpolation/ILinearInterpolator/LinearInterpolator/LinearInterpolator.h
         src/utils/Interpolation/IBilinearInterpolator/BilinearInterpolator/BilinearInterpolator.cpp
@@ -75,4 +75,5 @@ add_executable(CoreLayer main.cpp
         src/utils/Interpolation/ComponentInterpolationManager.h
         src/utils/ConeDirection/ConeDirection.cpp
         src/utils/ConeDirection/ConeDirection.h
+        src/utils/DynamicParametersProviderForFullRocketModel.h
 )

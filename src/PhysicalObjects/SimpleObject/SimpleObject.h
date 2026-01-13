@@ -29,10 +29,6 @@ private:
 
         params->eulerAngles = Eigen::Vector3<metricType>::Zero();
         params->angularVelocity = Eigen::Vector3<metricType>::Zero();
-        params->totalForce = Eigen::Vector3<metricType>::Zero();
-        params->totalMoment = Eigen::Vector3<metricType>::Zero();
-        params->mass = 0.0;
-        params->inertia = Eigen::Vector3<metricType>::Zero();
 
         return params;
     }

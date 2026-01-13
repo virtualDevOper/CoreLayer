@@ -25,8 +25,19 @@
 
 
 //TODO
-// == ИСПРАВИТЬ ТИПЫ УКАЗАТЕЛЕЙ НА SHARED
 // == МАКСИМАЛЬНО БЫСТРО ПОПЫТАТЬСЯ ЗАПУСТИТЬ ПРИЛОЖЕНИЕ И ПОТОМ НАРАЩИВАТЬ МЯСО, А ТО ТАК НИКОГДА НЕ ПОЛУЧИСТЯ
+
+
+
+// - shared_ptr для владения
+// - weak_ptr для наблюдения
+// - unique_ptr для уникального владения
+
+
+
+
+
+
 
 int main() {
     try {
@@ -54,32 +65,46 @@ int main() {
         std::vector<StateStorage<GLOBAL_CONFIG::PROJECT_TYPE>> trackedObjects;
         csvDataSaver->addTrackedObjs(std::move(trackedObjects));
 
-        // Загрузка данных для аэродинамики
-        auto Fx_t_data = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Fx_t.txt");
-        const auto data = Fx_t_data.loadFromFile();
-        auto e = data->interpolate(1.0);
+        auto Thrust_x_t = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Thrusts/Thrust_x_t.txt");
+        auto Thrust_x_t_data = Thrust_x_t.loadFromFile();
 
-        auto Cx_data = uploader2D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Cx_a_m.txt");
-        auto i = Cx_data.loadFromFile();
-        auto t = i->interpolate(0.8, 0.0);
+        auto Thrust_y_t = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Thrusts/Thrust_y_t.txt");
+        auto Thrust_y_t_data = Thrust_y_t.loadFromFile();
 
-        // Создание системы ОДУ для ракеты
-        auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>();
+        auto Thrust_z_t = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Thrusts/Thrust_z_t.txt");
+        auto Thrust_z_t_data = Thrust_z_t.loadFromFile();
+
+
+
+
+
+
         auto golubka_V1_init_params = std::make_unique<ObjInitParams<GLOBAL_CONFIG::PROJECT_TYPE>>();
         auto golubka_V1_aero_input = std::make_unique<RocketAeroInput<GLOBAL_CONFIG::PROJECT_TYPE>>();
 
-
-        // Создание простого объекта (птица/пуля)
-        auto simpleObj = std::make_unique<SimpleObject<double>>(
-            Eigen::Vector3d{0.0, 0.0, 100.0},  // Начальная позиция
-            Eigen::Vector3d{10.0, 0.0, -5.0}  // Начальная скорость
+        auto golubka_V1_interp_mgr = std::make_shared<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
+        golubka_V1_interp_mgr->setThrust(
+            std::move(Thrust_x_t_data),
+            std::move(Thrust_y_t_data),
+            std::move(Thrust_z_t_data)
         );
+
+
+        auto Cx_a_m = uploader2D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Aero/Cx_a_m.txt");
+        auto Cx_data = Cx_a_m.loadFromFile();
+
+        // Создание системы ОДУ для ракеты с провайдером, который будет хранить в себе getMass(t) getInertia(t) getThrust(t) getAerodynamicForces(t) getAerodynamicMoments(t)
+        auto paramsProvider = std::make_shared<DynamicParametersProviderForFullRocketModel<GLOBAL_CONFIG::PROJECT_TYPE>>(golubka_V1_interp_mgr);
+
+        auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(paramsProvider);
+
 
         // Создание ракеты
         auto golubka_V1 = std::make_shared<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>>(
             std::move(golubka_V1_system),
             std::move(golubka_V1_init_params),
-            std::move(golubka_V1_aero_input)
+            std::move(golubka_V1_aero_input),
+            std::move(golubka_V1_interp_mgr)
         );
 
         // Настройка решателя
@@ -121,7 +146,6 @@ int main() {
 
     return 0;
 }
-
 // TIP See CLion help at <a
 // href="https://www.jetbrains.com/help/clion/">jetbrains.com/help/clion/</a>.
 //  Also, you can try interactive lessons for CLion by selecting

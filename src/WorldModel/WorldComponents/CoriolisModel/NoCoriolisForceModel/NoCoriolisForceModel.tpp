@@ -4,6 +4,6 @@
 #pragma once
 
 template <typename metricType>
-    Eigen::Vector3<metricType> NoCoriolisForceModel<metricType>::getCoriolisForse(const Eigen::Vector3<metricType> r) const{
+    Eigen::Vector3<metricType> NoCoriolisForceModel<metricType>::getCoriolisForce(const Eigen::Vector3<metricType> r) const{
         return Eigen::Vector3<metricType>::Zero(); ;
     };

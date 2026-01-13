@@ -3,9 +3,6 @@
 //
 
 #pragma once
-
-
-#pragma once
 #include "../../../../PCH.h"
 
 template <typename metricType>
