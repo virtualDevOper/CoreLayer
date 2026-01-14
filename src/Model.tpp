@@ -1,14 +1,13 @@
 //
 // Created by 4NR_Operator_3 on 16.09.2025.
 //
-#pragma once
 
 template <typename metricType, typename CallbackType>
 IModel<metricType, CallbackType>::IModel(
-    std::shared_ptr<ODESolver<metricType,CallbackType>> solver,
+    std::unique_ptr<ODESolver<metricType, CallbackType>> solver,
     std::shared_ptr<AbstractWorldModel<metricType>> world,
-    std::shared_ptr<SimulationMomento<metricType>> dataSaver,
-    std::shared_ptr<SimulationDescriber> describer,
+    std::unique_ptr<SimulationMomento<metricType>> dataSaver,
+    std::unique_ptr<SimulationDescriber> describer,
     std::shared_ptr<ObjectManager<metricType>> manager,
     CallbackType continue_callback,
     metricType dt)
@@ -21,9 +20,10 @@ IModel<metricType, CallbackType>::IModel(
       continue_callback_(std::move(continue_callback)),
       dt_(dt)
 {
-    if (!odeSolver_) {throw std::invalid_argument("IModel: solver is null");}
-    if (!worldModel_) {throw std::invalid_argument("IModel: world model is null");}
-    if (!obj_manager_) {throw std::invalid_argument("IModel: object manager is null");}
+    if (!odeSolver_) { throw std::invalid_argument("IModel: solver is null"); }
+    if (!worldModel_) { throw std::invalid_argument("IModel: world model is null"); }
+    if (!obj_manager_) { throw std::invalid_argument("IModel: object manager is null"); }
+    if (!simulationData_) { throw std::invalid_argument("IModel: data saver is null"); }
 };
 
 template <typename metricType, typename CallbackType>
@@ -32,24 +32,31 @@ void IModel<metricType, CallbackType>::run() {
         if (simulationDescriber_) {
             std::cout << "start time: " << simulationDescriber_->start_time << std::endl;
             std::cout << "operator name: " << simulationDescriber_->operator_name << std::endl;
-            std::cout <<"ode solver: " << simulationDescriber_->ode_solver << std::endl;
-            std::cout <<"world config: " << simulationDescriber_->world_config << std::endl;
-            std::cout <<"data saver: " << simulationDescriber_->data_saver << std::endl;
-            std::cout <<"earth type: " << simulationDescriber_->earth_type << std::endl;
-            for (auto &obj: simulationDescriber_->simulation_objects) {
+            std::cout << "ode solver: " << simulationDescriber_->ode_solver << std::endl;
+            std::cout << "world config: " << simulationDescriber_->world_config << std::endl;
+            std::cout << "data saver: " << simulationDescriber_->data_saver << std::endl;
+            std::cout << "earth type: " << simulationDescriber_->earth_type << std::endl;
+            std::cout << "simulation objects: ";
+            for (const auto& obj : simulationDescriber_->simulation_objects) {
                 std::cout << obj << " ";
             }
             std::cout << std::endl;
         }
+
         this->odeSolver_->solve(
-        obj_manager_, 0, dt_, continue_callback_,simulationData_
+            obj_manager_,
+            0,
+            dt_,
+            continue_callback_,
+            simulationData_.get()  // ВАЖНО: передаем raw pointer, так как solve принимает указатель
         );
-        /*auto end_time = std::chrono::system_clock::to_time_t(
-        std::chrono::system_clock::now() + std::chrono::hours(simulationDescriber_->utc_offset_));
-        и тут посчитай затраченное время
-        */
-    } catch (const std::exception& e) {std::cerr << "Ошибка: " << e.what() << std::endl;}
+
+        // Дополнительно: можно добавить сохранение данных после завершения симуляции
+        if (simulationData_) {
+            simulationData_->save();
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Ошибка в симуляции: " << e.what() << std::endl;
+        throw; // Пробрасываем исключение дальше для обработки в main
+    }
 }
-
-
-

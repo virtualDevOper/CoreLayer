@@ -33,9 +33,27 @@
 // - weak_ptr для наблюдения
 // - unique_ptr для уникального владения
 
+/*
+Если один класс является естественным владельцем, используйте std::unique_ptr
+Основной владелец использует shared_ptr
+Вторичные классы используют weak_ptr для доступа
+Это предотвращает утечки памяти из-за циклических ссылок.
+*/
 
 
+/*бляха муха, по идее вот так нужно
 
+template<typename ProjectType>
+class StopCriterion {
+private:
+    std::weak_ptr<ObjectManager<ProjectType>> _managerWeak;
+
+public:
+    // Конструктор принимает shared_ptr и создает weak_ptr
+    explicit StopCriterion(std::shared_ptr<ObjectManager<ProjectType>> manager)
+        : _managerWeak(manager)  // shared_ptr автоматически преобразуется в weak_ptr
+    {
+*/
 
 
 
@@ -59,9 +77,9 @@ int main() {
 
         auto describer = std::make_unique<SimulationDescriber>(3);
 
-        // Настройка сохранения данных
-        const auto csvDataSaver = std::make_shared<SimulationMomento<GLOBAL_CONFIG::PROJECT_TYPE>>();
-        csvDataSaver->setStrategy(std::make_shared<CsvSaveStrategy<GLOBAL_CONFIG::PROJECT_TYPE>>("simulation_data.csv"));
+
+        auto csvDataSaver = std::make_unique<SimulationMomento<GLOBAL_CONFIG::PROJECT_TYPE>>();
+        csvDataSaver->setStrategy(std::make_unique<CsvSaveStrategy<GLOBAL_CONFIG::PROJECT_TYPE>>("simulation_data.csv"));
         std::vector<StateStorage<GLOBAL_CONFIG::PROJECT_TYPE>> trackedObjects;
         csvDataSaver->addTrackedObjs(std::move(trackedObjects));
 
@@ -73,11 +91,6 @@ int main() {
 
         auto Thrust_z_t = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Thrusts/Thrust_z_t.txt");
         auto Thrust_z_t_data = Thrust_z_t.loadFromFile();
-
-
-
-
-
 
         auto golubka_V1_init_params = std::make_unique<ObjInitParams<GLOBAL_CONFIG::PROJECT_TYPE>>();
         auto golubka_V1_aero_input = std::make_unique<RocketAeroInput<GLOBAL_CONFIG::PROJECT_TYPE>>();
@@ -93,25 +106,23 @@ int main() {
         auto Cx_a_m = uploader2D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Aero/Cx_a_m.txt");
         auto Cx_data = Cx_a_m.loadFromFile();
 
-        // Создание системы ОДУ для ракеты с провайдером, который будет хранить в себе getMass(t) getInertia(t) getThrust(t) getAerodynamicForces(t) getAerodynamicMoments(t)
+        // нужнен шаред птр по идее
         auto paramsProvider = std::make_shared<DynamicParametersProviderForFullRocketModel<GLOBAL_CONFIG::PROJECT_TYPE>>(golubka_V1_interp_mgr);
 
         auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(paramsProvider);
-
 
         // Создание ракеты
         auto golubka_V1 = std::make_shared<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>>(
             std::move(golubka_V1_system),
             std::move(golubka_V1_init_params),
             std::move(golubka_V1_aero_input),
-            std::move(golubka_V1_interp_mgr)
+            golubka_V1_interp_mgr // эта тема нужна и в другом месте, поэтому не передаем владение.
         );
 
-        // Настройка решателя
-        auto solver = std::make_shared<RungeKutta4Solver<GLOBAL_CONFIG::PROJECT_TYPE, GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE>>();
+        auto solver = std::make_unique<RungeKutta4Solver<GLOBAL_CONFIG::PROJECT_TYPE, GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE>>();
 
         // Создание менеджера объектов
-        const auto manager = std::make_shared<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
+        auto manager = std::make_shared<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
         auto golubka_V1_ID = manager->addTrackedObject(golubka_V1);
 
         // Callback для проверки продолжения симуляции
@@ -123,9 +134,9 @@ int main() {
 
 
         IModel<GLOBAL_CONFIG::PROJECT_TYPE, GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE> model(
-            solver,
+            std::move(solver),
             std::move(world),
-            csvDataSaver,
+            std::move(csvDataSaver),
             std::move(describer),
             manager,
             std::move(continue_callback),
