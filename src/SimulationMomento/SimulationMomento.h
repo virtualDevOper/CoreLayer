@@ -39,33 +39,18 @@ public:
         strategy_ = std::move(strategy);
     }
 
-    void save() {
-        if (strategy_) {
-            strategy_->save(trackedStates_);
-        }
-    }
+    void save() {if (strategy_) {strategy_->save(trackedStates_);}}
 
-    const std::vector<StateStorage<metricType>>& viewTrackedObjs() const {
-        return trackedStates_;
-    }
+    const std::vector<StateStorage<metricType>>& viewTrackedObjs() const {return trackedStates_;}
 
     // Три версии для разных случаев
-    void addSnapshotByID(int id, const ObjSnapshot<metricType>& snapshot) {
-        getStateStorageByID(id).addState(snapshot);
-    }
-
-    void addSnapshotByID(int id, ObjSnapshot<metricType>&& snapshot) {
-        getStateStorageByID(id).addState(std::move(snapshot));
-    }
-
-    void addSnapshotByID(int id, std::unique_ptr<ObjSnapshot<metricType>> snapshot) {
-        getStateStorageByID(id).addState(std::move(snapshot));
-    }
+    void addSnapshotByID(const int id, const ObjSnapshot<metricType>& snapshot) {getStateStorageByID(id).addState(snapshot);}
+    void addSnapshotByID(const int id, ObjSnapshot<metricType>&& snapshot) {getStateStorageByID(id).addState(std::move(snapshot));}
+    void addSnapshotByID(const int id, std::unique_ptr<ObjSnapshot<metricType>> snapshot) {getStateStorageByID(id).addState(std::move(snapshot));}
 
     void saveStartParams(const std::vector<std::pair<int, std::shared_ptr<AbstractObject<metricType>>>>& objects) {
         for (const auto& [id, obj] : objects) {
             if (!obj) continue;
-
             auto objectStateSnapshot = obj->getStateSnapshot();
             StateStorage<metricType> newState(id);
             newState.addState(objectStateSnapshot);

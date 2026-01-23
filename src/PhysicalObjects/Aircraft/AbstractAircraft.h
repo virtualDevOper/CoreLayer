@@ -18,16 +18,27 @@
  */
 
 template <typename metricType, typename AeroInput>
-class AbstractAircraft : public AbstractObject<metricType>{
+class AbstractAircraft : public AbstractObject<metricType> {
 public:
     explicit AbstractAircraft(
         std::unique_ptr<IDynamicsSystem<metricType>> sys,
         std::unique_ptr<ObjInitParams<metricType>> initial_params,
-        std::unique_ptr<AeroInput> aero_input)
+        std::unique_ptr<AeroInput> aero_input,
+        std::shared_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr)
         : AbstractObject<metricType>(std::move(sys), std::move(initial_params)),
-          aero_input_(std::move(aero_input)) {}
+          aero_input_(std::move(aero_input)),
+          comp_interp_mgr_(comp_interp_mgr)
+    {
+        if (!aero_input_) {
+            throw std::invalid_argument("AeroInput cannot be null");
+        }
 
+        if (!comp_interp_mgr_) {
+            throw std::invalid_argument("ComponentInterpolationManager cannot be null");
+        }
+    }
 
 protected:
     std::unique_ptr<AeroInput> aero_input_;
+    std::shared_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr_;
 };

@@ -19,7 +19,7 @@ public:
         metricType t_start,
         metricType step_size,
         CallbackType continue_callback,
-        std::shared_ptr<SimulationMomento<metricType>> momento
+        SimulationMomento<metricType>& momento
     ) = 0;
 
 protected:

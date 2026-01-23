@@ -22,12 +22,13 @@
 #include "src/utils/DataTable/DataTable2D/uploader2D_fromTXT.h"
 #include "GLOBAL_CONFIG.h"
 #include "src/PhysicalObjects/SimpleObject/SimpleObject.h"
+#include "src/utils/DynamicParametersProviderForFullRocketModel.h"
 
 
 //TODO
 // == МАКСИМАЛЬНО БЫСТРО ПОПЫТАТЬСЯ ЗАПУСТИТЬ ПРИЛОЖЕНИЕ И ПОТОМ НАРАЩИВАТЬ МЯСО, А ТО ТАК НИКОГДА НЕ ПОЛУЧИСТЯ
 
-
+//исправь иерархию классов ЛА, при создании в конструкторе управляемого выстрела абстрактного
 
 // - shared_ptr для владения
 // - weak_ptr для наблюдения
@@ -39,23 +40,6 @@
 Вторичные классы используют weak_ptr для доступа
 Это предотвращает утечки памяти из-за циклических ссылок.
 */
-
-
-/*бляха муха, по идее вот так нужно
-
-template<typename ProjectType>
-class StopCriterion {
-private:
-    std::weak_ptr<ObjectManager<ProjectType>> _managerWeak;
-
-public:
-    // Конструктор принимает shared_ptr и создает weak_ptr
-    explicit StopCriterion(std::shared_ptr<ObjectManager<ProjectType>> manager)
-        : _managerWeak(manager)  // shared_ptr автоматически преобразуется в weak_ptr
-    {
-*/
-
-
 
 int main() {
     try {
@@ -107,9 +91,10 @@ int main() {
         auto Cx_data = Cx_a_m.loadFromFile();
 
         // нужнен шаред птр по идее
-        auto paramsProvider = std::make_shared<DynamicParametersProviderForFullRocketModel<GLOBAL_CONFIG::PROJECT_TYPE>>(golubka_V1_interp_mgr);
+        auto paramsProvider = std::make_shared<DynamicParametersProviderForFullRocketModel<
+            GLOBAL_CONFIG::PROJECT_TYPE> >(golubka_V1_interp_mgr);
 
-        auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(paramsProvider);
+        auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(paramsProvider, world);
 
         // Создание ракеты
         auto golubka_V1 = std::make_shared<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>>(

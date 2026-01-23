@@ -31,24 +31,46 @@ public:
         std::unique_ptr<ObjInitParams<metricType>> init_params)
         : sys_(std::move(sys)) {
 
-        if (!init_params || !sys) {throw std::invalid_argument("ObjInitParams или DynamicsSystem не может быть null");}
-        presentSnapshot_ = std::make_unique<ObjSnapshot<metricType>>(
-            init_params->position,
-            init_params->velocity,
-            init_params->eulerAngles,
-            init_params->angularVelocity
-        );
+        if (!init_params || !sys_) {
+            throw std::invalid_argument("ObjInitParams или DynamicsSystem не может быть null");
+        }
+
+        presentSnapshot_ = ObjSnapshot<metricType>::createBuilder()
+            .setPosition(init_params->position)
+            .setVelocity(init_params->velocity)
+            .setEulerAngles(init_params->eulerAngles)
+            .setAngularVelocity(init_params->angularVelocity)
+            .buildUnique();
+
+        if (!presentSnapshot_) {
+            throw std::runtime_error("Failed to create initial snapshot");
+        }
     }
+
     virtual ~AbstractObject() = default;
 
     // === ДОСТУП К СИСТЕМЕ ОДУ ===
-    std::shared_ptr<IDynamicsSystem<metricType>> getDynamicSys() const {return sys_;}
+    std::shared_ptr<IDynamicsSystem<metricType>> getDynamicSys() const {
+        if (!sys_) {
+            throw std::runtime_error("Dynamics system is not initialized");
+        }
+        return sys_;
+    }
 
     // === ДОСТУП К СОСТОЯНИЮ ===
-    const ObjSnapshot<metricType>& getStateSnapshot() const {return *presentSnapshot_;}
-    void updateSnapshot(std::unique_ptr<ObjSnapshot<metricType>> new_snapshot) {presentSnapshot_ = std::move(new_snapshot);}
+    const ObjSnapshot<metricType>& getStateSnapshot() const {
+        if (!presentSnapshot_) {
+            throw std::runtime_error("Snapshot is not initialized");
+        }
+        return *presentSnapshot_;
+    }
 
-
+    void updateSnapshot(std::unique_ptr<ObjSnapshot<metricType>> new_snapshot) {
+        if (!new_snapshot) {
+            throw std::invalid_argument("New snapshot cannot be null");
+        }
+        presentSnapshot_ = std::move(new_snapshot);
+    }
 
     // === СТАТУС ОБЪЕКТА ===
     enum class ObjectState { ACTIVE, DESTROYED, COLLIDED };
@@ -57,13 +79,17 @@ public:
     void setDestroyed() { currentState_ = ObjectState::DESTROYED; }
     void setCollided() { currentState_ = ObjectState::COLLIDED; }
 
-    [[nodiscard]] bool isActive() const { return currentState_ == ObjectState::ACTIVE; }
-    [[nodiscard]] bool isCollided() const { return currentState_ == ObjectState::COLLIDED; }
-    [[nodiscard]] bool isDestroyed() const { return currentState_ == ObjectState::DESTROYED; }
+    [[nodiscard]] bool isActive() const noexcept { return currentState_ == ObjectState::ACTIVE; }
+    [[nodiscard]] bool isCollided() const noexcept { return currentState_ == ObjectState::COLLIDED; }
+    [[nodiscard]] bool isDestroyed() const noexcept { return currentState_ == ObjectState::DESTROYED; }
 
 protected:
     std::unique_ptr<ObjSnapshot<metricType>> presentSnapshot_;
-    std::shared_ptr<IDynamicsSystem<metricType>> sys_;
+    std::shared_ptr<IDynamicsSystem<metricType>> sys_; // Изменено на shared_ptr для безопасного доступа
     ObjectState currentState_ = ObjectState::ACTIVE;
+
+    // Запрещаем копирование
+    AbstractObject(const AbstractObject&) = delete;
+    AbstractObject& operator=(const AbstractObject&) = delete;
 };
 

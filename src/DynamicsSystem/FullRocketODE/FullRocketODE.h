@@ -5,7 +5,7 @@
 #pragma once
 #include "../IDynamicsSystem.h"
 #include "../../utils/ConeDirection/ConeDirection.h"
-#include "DynamicParametersProviderForFullRocketModel.h"
+#include "../../utils/DynamicParametersProviderForFullRocketModel.h"
 
 
 
@@ -34,17 +34,17 @@
 template <typename metricType>
 class FullRocketODE final : public IDynamicsSystem<metricType> {
 private:
-    std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> dataToODE_provider_;
-    std::shared_ptr<AbstractWorldModel<metricType>> world_;
+    std::weak_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider_;
+    std::weak_ptr<AbstractWorldModel<metricType>> world_;
 
 public:
     explicit FullRocketODE(
-        const std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>>& params_provider,
-        const std::shared_ptr<AbstractWorldModel<metricType>>& world
+        const std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
+        const std::shared_ptr<AbstractWorldModel<metricType>> world
         )
         : params_provider_(params_provider),
             world_(world) {
-        if (!params_provider_) {
+        if (params_provider_.expired()) {
             throw std::invalid_argument("Поставщик параметров не может быть null");
         }
     }
@@ -100,8 +100,14 @@ private:
         auto derivatives = std::make_unique<Derivatives>();
 
         // === ШАГ 1: ПОЛУЧИТЬ ПАРАМЕТРЫ ===
-        metricType mass = params_provider_->getMass(t);
-        auto inertia = params_provider_->getInertia(t);  // (I_x, I_y, I_z)
+        auto params_provider = params_provider_.lock();
+        if (!params_provider) {
+            throw std::runtime_error("DynamicParametersProvider has been destroyed");
+        }
+
+        // Теперь можно безопасно вызывать методы
+        metricType mass = params_provider->getMass(t);
+        auto inertia = params_provider->getInertia(t);  // (I_x, I_y, I_z)
 
         // === ШАГ 2: ТРАНСФОРМИРОВАТЬ СКОРОСТЬ ИЗ ЗЕМНОЙ В СВЯЗНУЮ СК ===
         const auto& V_earth = state.getVelocity();  // (v_xe, v_ye, v_ze)
@@ -126,11 +132,11 @@ private:
         // === ШАГ 5: ПОЛУЧИТЬ АЭРОДИНАМИЧЕСКИЕ СИЛЫ И МОМЕНТЫ ===
         // Силы и моменты возвращаются в связной СК!
         // ну вот тут ты охуел
-        auto aero_forces_body = params_provider_->getAerodynamicForces(t);
-        auto aero_moments_body = params_provider_->getAerodynamicMoments(t);
+        auto aero_forces_body = params_provider->getAerodynamicForces(t);
+        auto aero_moments_body = params_provider->getAerodynamicMoments(t);
 
         // === ШАГ 6: ПОЛУЧИТЬ ТЯГУ (уже в связной СК) ===
-        auto thrust_body = params_provider_->getThrust(t);
+        auto thrust_body = params_provider->getThrust(t);
 
         // === ШАГ 7: СОСТАВИТЬ СУММАРНЫЕ СИЛЫ В СВЯЗНОЙ СК ===
         auto F_sum_body = computeTotalForces(

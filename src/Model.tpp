@@ -1,6 +1,7 @@
 //
 // Created by 4NR_Operator_3 on 16.09.2025.
 //
+#pragma once
 
 template <typename metricType, typename CallbackType>
 IModel<metricType, CallbackType>::IModel(
@@ -42,21 +43,21 @@ void IModel<metricType, CallbackType>::run() {
             }
             std::cout << std::endl;
         }
-
-        this->odeSolver_->solve(
+            if (!simulationData_) {
+                throw std::runtime_error("Simulation data saver was nullified after construction");
+            }
+                this->odeSolver_->solve(
             obj_manager_,
             0,
             dt_,
             continue_callback_,
-            simulationData_.get()  // ВАЖНО: передаем raw pointer, так как solve принимает указатель
-        );
+            *simulationData_
+            );
 
-        // Дополнительно: можно добавить сохранение данных после завершения симуляции
-        if (simulationData_) {
             simulationData_->save();
-        }
+
     } catch (const std::exception& e) {
         std::cerr << "Ошибка в симуляции: " << e.what() << std::endl;
-        throw; // Пробрасываем исключение дальше для обработки в main
+        throw;
     }
 }

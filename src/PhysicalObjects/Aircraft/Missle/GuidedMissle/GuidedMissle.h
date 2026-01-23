@@ -24,13 +24,12 @@ public:
         std::unique_ptr<IDynamicsSystem<metricType>> sys,
         std::unique_ptr<ObjInitParams<metricType>> initial_params,
         std::unique_ptr<AeroInput> aero_input,
-        std::unique_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr)
+        std::shared_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr)
         : AbstractAircraft<metricType, AeroInput>(
             std::move(sys),
             std::move(initial_params),
             std::move(aero_input),
-            std::move(comp_interp_mgr)) {}
-
+            comp_interp_mgr) {}
 
     // === ДАТЧИКИ БИНС ===
     virtual Eigen::Vector3<metricType> getGyroscopeAngularVelocity(metricType t) const = 0;
@@ -38,6 +37,15 @@ public:
 
     // === АВТОПИЛОТ ===
     virtual void autopilot(metricType t) = 0;
+
+protected:
+    // Защищенные методы для наследников
+    [[nodiscard]] const AeroInput& getAeroInput() const {
+        if (!this->aero_input_) {
+            throw std::runtime_error("AeroInput is not initialized");
+        }
+        return *this->aero_input_;
+    }
 };
 
 

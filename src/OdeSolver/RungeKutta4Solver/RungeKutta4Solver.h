@@ -20,7 +20,7 @@ public:
         metricType t_start,
         metricType step_size,
         CallbackType continue_callback,
-        std::shared_ptr<SimulationMomento<metricType>> momento
+        SimulationMomento<metricType>& momento
     ) override {
 
         if (step_size <= static_cast<metricType>(0)) {throw std::invalid_argument("Шаг по времени должен быть положительным, сейчас он: " + std::to_string(step_size));}
@@ -28,27 +28,27 @@ public:
         if (!object_manager || object_manager->getObjectCount() == 0) {throw std::invalid_argument("Нет объектов для обработки!");}
 
         metricType current_time = t_start;
-        momento->saveStartParams(object_manager->getAllObjects());
+        momento.saveStartParams(object_manager->getAllObjects());
         const auto& all_objects = object_manager->getAllObjects();
 
         while (true) {
             for (const auto& [id, object] : all_objects) {
                 if (!object) continue;
 
-                auto& current_state_storage = momento->getStateStorageByID(id);
+                auto& current_state_storage = momento.getStateStorageByID(id);
                 const auto& current_state = current_state_storage.getStates().back();
 
                 if (object->isActive()) {
                     auto new_state = solveOneStepForOneObj(
                         current_state, current_time, step_size, object->getDynamicSys()
                     );
-                    momento->addSnapshotByID(id, std::move(new_state));
+                    momento.addSnapshotByID(id, std::move(new_state));
                 } else { // если неактивен, то замораживается
-                    momento->addSnapshotByID(id, current_state);
+                    momento.addSnapshotByID(id, current_state);
                 }
             }
             current_time += step_size;
-            auto collided_objects_IDs = this->checkCollisions(momento->viewTrackedObjs());
+            auto collided_objects_IDs = this->checkCollisions(momento.viewTrackedObjs());
             freezeCollidedObjects(object_manager, collided_objects_IDs);
 
             if (!continue_callback(object_manager)) {

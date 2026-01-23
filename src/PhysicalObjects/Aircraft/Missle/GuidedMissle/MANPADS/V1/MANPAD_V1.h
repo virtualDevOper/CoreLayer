@@ -29,44 +29,65 @@
 
 
 template<typename metricType>
-class MANPAD_V1 final :public GuidedMissle<metricType, RocketAeroInput<metricType>>{
+class MANPAD_V1 final : public GuidedMissle<metricType, RocketAeroInput<metricType>> {
 public:
     explicit MANPAD_V1(
         std::unique_ptr<IDynamicsSystem<metricType>> sys,
         std::unique_ptr<ObjInitParams<metricType>> initial_params,
         std::unique_ptr<RocketAeroInput<metricType>> aero_input,
-        std::unique_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr)
+        std::shared_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr)
         : GuidedMissle<metricType, RocketAeroInput<metricType>>(
               std::move(sys),
               std::move(initial_params),
               std::move(aero_input),
-              std::move(comp_interp_mgr)),
-    aero_model_(std::make_unique<FullAeroModel<metricType>>(
-        this->aero_input_.get(),
-        this->comp_interp_mgr_.get())){}
+              comp_interp_mgr),
+          aero_model_(std::make_unique<FullAeroModel<metricType>>(
+              this->getAeroInput(),
+              comp_interp_mgr))
+    {
+        if (!aero_model_) {
+            throw std::runtime_error("Failed to create aerodynamic model");
+        }
+    }
 
     Eigen::Vector3<metricType> getGyroscopeAngularVelocity(metricType t) const override {
-        // TODO: реализовать
-        return Eigen::Vector3<metricType>::Zero();
+        try {
+            // TODO: реализовать с использованием датчиков
+            return Eigen::Vector3<metricType>::Zero();
+        } catch (const std::exception& e) {
+            throw std::runtime_error("Gyroscope error at time " + std::to_string(t) + ": " + e.what());
+        }
     }
 
     Eigen::Vector3<metricType> getAccelerometerAcceleration(metricType t) const override {
-        // TODO: реализовать
-        return Eigen::Vector3<metricType>::Zero();
+        try {
+            // TODO: реализовать с использованием датчиков
+            return Eigen::Vector3<metricType>::Zero();
+        } catch (const std::exception& e) {
+            throw std::runtime_error("Accelerometer error at time " + std::to_string(t) + ": " + e.what());
+        }
     }
 
     void autopilot(metricType t) override {
-        // TODO: реализовать автопилот
-        auto a = 10;
-    }
+        try {
+            auto a = 10;
 
+        } catch (const std::exception& e) {
+            throw std::runtime_error("Autopilot error at time " + std::to_string(t) + ": " + e.what());
+        }
+    }
 
 private:
     std::unique_ptr<FullAeroModel<metricType>> aero_model_;
+
     std::vector<metricType> getRudderDeflections(metricType t) const {
-        std::vector<metricType> deflections(4, 0.0); // 4 руля
-        return deflections;
+        try {
+            std::vector<metricType> deflections(4, 0.0); // 4 руля
+            // TODO: Реализовать логику расчета углов отклонения
+            return deflections;
+        } catch (const std::exception& e) {
+            throw std::runtime_error("Rudder deflection error at time " + std::to_string(t) + ": " + e.what());
+        }
     }
 };
-
 

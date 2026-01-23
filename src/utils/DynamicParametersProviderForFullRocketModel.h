@@ -31,7 +31,7 @@ public:
         return interpolation_manager_->getInertia(t);
     }
 
-    Eigen::Vector3<metricType> getInertia(metricType t) const {
-        return interpolation_manager_->getInertia(t);
+    Eigen::Vector3<metricType> getThrust(metricType t) const {
+        return interpolation_manager_->getThrust(t);
     }
-}
+};
