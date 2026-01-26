@@ -4,7 +4,7 @@
 
 #pragma once
 #include "../../PCH.h"
-
+#include "Interpolation/ComponentInterpolationManager.h"
 
 // Создание системы ОДУ для ракеты с провайдером, который будет хранить в себе
 // getMass(t) getInertia(t) getThrust(t) getAerodynamicForces(t) getAerodynamicMoments(t)
@@ -15,23 +15,49 @@
 // и используется но может передаваться куда угодно), эта будет при
 // инициализации сразу иметь доступ к менеджеру интерполяторов
 
+
+//TODO
+// == Убери заглушки!!
+
 template <typename metricType>
 class DynamicParametersProviderForFullRocketModel {
 private:
     std::weak_ptr<ComponentInterpolationManager<metricType>> interpolation_manager_;
-
 public:
     explicit DynamicParametersProviderForFullRocketModel(
         std::shared_ptr<ComponentInterpolationManager<metricType>> interpolation_manager)
-        : interpolation_manager_(interpolation_manager){}
+        : interpolation_manager_(interpolation_manager) {}
+
     metricType getMass(metricType t) {
-        return interpolation_manager_->getMass(t);
+        auto manager = interpolation_manager_.lock();
+        if (!manager) throw std::runtime_error("Interpolation manager expired");
+        return manager->getMass(t);
     }
+
     Eigen::Vector3<metricType> getInertia(metricType t) const {
-        return interpolation_manager_->getInertia(t);
+        auto manager = interpolation_manager_.lock();
+        if (!manager) throw std::runtime_error("Interpolation manager expired");
+        return manager->getInertia(t);
     }
 
     Eigen::Vector3<metricType> getThrust(metricType t) const {
-        return interpolation_manager_->getThrust(t);
+        auto manager = interpolation_manager_.lock();
+        if (!manager) throw std::runtime_error("Interpolation manager expired");
+        return manager->getThrust(t);
+    }
+
+    // Добавленные методы
+    Eigen::Vector3<metricType> getAerodynamicForces(metricType t) const {
+        auto manager = interpolation_manager_.lock();
+        if (!manager) throw std::runtime_error("Interpolation manager expired");
+        // Временная заглушка - вернуть нулевые силы
+        return Eigen::Vector3<metricType>::Zero();
+    }
+
+    Eigen::Vector3<metricType> getAerodynamicMoments(metricType t) const {
+        auto manager = interpolation_manager_.lock();
+        if (!manager) throw std::runtime_error("Interpolation manager expired");
+        // Временная заглушка - вернуть нулевые моменты
+        return Eigen::Vector3<metricType>::Zero();
     }
 };

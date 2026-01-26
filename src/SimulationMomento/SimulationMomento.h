@@ -39,7 +39,12 @@ public:
         strategy_ = std::move(strategy);
     }
 
-    void save() {if (strategy_) {strategy_->save(trackedStates_);}}
+    void save() {
+        if (!strategy_) {
+            throw std::runtime_error("Save strategy not set");
+        }
+        strategy_->save(trackedStates_);
+    }
 
     const std::vector<StateStorage<metricType>>& viewTrackedObjs() const {return trackedStates_;}
 
@@ -48,9 +53,10 @@ public:
     void addSnapshotByID(const int id, ObjSnapshot<metricType>&& snapshot) {getStateStorageByID(id).addState(std::move(snapshot));}
     void addSnapshotByID(const int id, std::unique_ptr<ObjSnapshot<metricType>> snapshot) {getStateStorageByID(id).addState(std::move(snapshot));}
 
-    void saveStartParams(const std::vector<std::pair<int, std::shared_ptr<AbstractObject<metricType>>>>& objects) {
-        for (const auto& [id, obj] : objects) {
-            if (!obj) continue;
+    void saveStartParams(const std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>>& objects) {
+        for (const auto& [id, weak_obj] : objects) {
+            auto obj = weak_obj.lock(); // Получаем shared_ptr из weak_ptr
+            if (!obj) continue; // Пропускаем уничтоженные объекты
             auto objectStateSnapshot = obj->getStateSnapshot();
             StateStorage<metricType> newState(id);
             newState.addState(objectStateSnapshot);

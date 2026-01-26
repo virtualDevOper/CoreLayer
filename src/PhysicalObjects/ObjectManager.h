@@ -60,9 +60,9 @@ public:
     }
 
     // Получение всех объектов для решателя
-    std::vector<std::pair<int, std::shared_ptr<AbstractObject<metricType>>>> getAllObjects() const {
+    std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> getAllObjects() const {
         std::lock_guard lock(mutex_);
-        std::vector<std::pair<int, std::shared_ptr<AbstractObject<metricType>>>> objects;
+        std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> objects;
         objects.reserve(all_objects_.size());
         for (const auto& [id, obj] : all_objects_) {
             objects.emplace_back(id, obj);

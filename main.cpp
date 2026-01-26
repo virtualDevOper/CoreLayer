@@ -43,72 +43,88 @@
 
 int main() {
     try {
+        // RAII обертка для всех ресурсов
+        struct ResourceManager {
+            std::shared_ptr<SimpleWorld<GLOBAL_CONFIG::PROJECT_TYPE>> world;
+            std::unique_ptr<SimulationDescriber> describer;
+            std::unique_ptr<SimulationMomento<GLOBAL_CONFIG::PROJECT_TYPE>> csvDataSaver;
+            std::shared_ptr<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>> manager;
+            std::shared_ptr<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>> golubka_V1;
+            std::shared_ptr<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>> golubka_V1_interp_mgr;
+
+            ~ResourceManager() {
+                // Явное освобождение ресурсов в правильном порядке
+                golubka_V1.reset();
+                manager.reset();
+                csvDataSaver.reset();
+                world.reset();
+            }
+        } resource_manager;
+
         // Инициализация мира
-        auto world = std::make_shared<SimpleWorld<GLOBAL_CONFIG::PROJECT_TYPE>>();
+        resource_manager.world = std::make_shared<SimpleWorld<GLOBAL_CONFIG::PROJECT_TYPE>>();
         {
             auto wind = std::make_unique<NoWindModel<GLOBAL_CONFIG::PROJECT_TYPE>>();
             auto atmospher = std::make_unique<AtmosphericModel<GLOBAL_CONFIG::PROJECT_TYPE>>();
             auto gravity = std::make_unique<KavendishModel<GLOBAL_CONFIG::PROJECT_TYPE>>();
             auto coriolis = std::make_unique<NoCoriolisForceModel<GLOBAL_CONFIG::PROJECT_TYPE>>();
             auto terrain = std::make_unique<PlaneTerrain<GLOBAL_CONFIG::PROJECT_TYPE>>();
-
-            world->setAtmosphericModel(std::move(atmospher));
-            world->setWindModel(std::move(wind));
-            world->setGravityModel(std::move(gravity));
-            world->setCoriolisEffect(std::move(coriolis));
-            world->setTerrain(std::move(terrain));
+            resource_manager.world->setAtmosphericModel(std::move(atmospher));
+            resource_manager.world->setWindModel(std::move(wind));
+            resource_manager.world->setGravityModel(std::move(gravity));
+            resource_manager.world->setCoriolisEffect(std::move(coriolis));
+            resource_manager.world->setTerrain(std::move(terrain));
         }
 
-        auto describer = std::make_unique<SimulationDescriber>(3);
+        resource_manager.describer = std::make_unique<SimulationDescriber>(3);
+        resource_manager.csvDataSaver = std::make_unique<SimulationMomento<GLOBAL_CONFIG::PROJECT_TYPE>>();
+        resource_manager.csvDataSaver->setStrategy(std::make_unique<CsvSaveStrategy<GLOBAL_CONFIG::PROJECT_TYPE>>("simulation_data.csv"));
 
-
-        auto csvDataSaver = std::make_unique<SimulationMomento<GLOBAL_CONFIG::PROJECT_TYPE>>();
-        csvDataSaver->setStrategy(std::make_unique<CsvSaveStrategy<GLOBAL_CONFIG::PROJECT_TYPE>>("simulation_data.csv"));
         std::vector<StateStorage<GLOBAL_CONFIG::PROJECT_TYPE>> trackedObjects;
-        csvDataSaver->addTrackedObjs(std::move(trackedObjects));
+        resource_manager.csvDataSaver->addTrackedObjs(std::move(trackedObjects));
 
-        auto Thrust_x_t = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Thrusts/Thrust_x_t.txt");
-        auto Thrust_x_t_data = Thrust_x_t.loadFromFile();
+        // Загрузка данных с обработкой ошибок
+        auto loadDataTable = [](const std::string& filename) {
+            try {
+                auto loader = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>(filename);
+                return loader.loadFromFile();
+            } catch (const std::exception& e) {
+                std::cerr << "Error loading data table '" << filename << "': " << e.what() << std::endl;
+                throw;
+            }
+        };
 
-        auto Thrust_y_t = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Thrusts/Thrust_y_t.txt");
-        auto Thrust_y_t_data = Thrust_y_t.loadFromFile();
-
-        auto Thrust_z_t = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Thrusts/Thrust_z_t.txt");
-        auto Thrust_z_t_data = Thrust_z_t.loadFromFile();
+        auto Thrust_x_t_data = loadDataTable("dataTables/golubka_V1/Thrusts/Thrust_x_t.txt");
+        auto Thrust_y_t_data = loadDataTable("dataTables/golubka_V1/Thrusts/Thrust_y_t.txt");
+        auto Thrust_z_t_data = loadDataTable("dataTables/golubka_V1/Thrusts/Thrust_z_t.txt");
 
         auto golubka_V1_init_params = std::make_unique<ObjInitParams<GLOBAL_CONFIG::PROJECT_TYPE>>();
         auto golubka_V1_aero_input = std::make_unique<RocketAeroInput<GLOBAL_CONFIG::PROJECT_TYPE>>();
-
-        auto golubka_V1_interp_mgr = std::make_shared<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
-        golubka_V1_interp_mgr->setThrust(
+        resource_manager.golubka_V1_interp_mgr = std::make_shared<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
+        resource_manager.golubka_V1_interp_mgr->setThrust(
             std::move(Thrust_x_t_data),
             std::move(Thrust_y_t_data),
             std::move(Thrust_z_t_data)
         );
 
-
-        auto Cx_a_m = uploader2D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>("dataTables/golubka_V1/Aero/Cx_a_m.txt");
-        auto Cx_data = Cx_a_m.loadFromFile();
-
-        // нужнен шаред птр по идее
         auto paramsProvider = std::make_shared<DynamicParametersProviderForFullRocketModel<
-            GLOBAL_CONFIG::PROJECT_TYPE> >(golubka_V1_interp_mgr);
+            GLOBAL_CONFIG::PROJECT_TYPE>>(resource_manager.golubka_V1_interp_mgr);
 
-        auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(paramsProvider, world);
+        auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(paramsProvider, resource_manager.world);
 
-        // Создание ракеты
-        auto golubka_V1 = std::make_shared<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>>(
+        // Создание ракеты с безопасным управлением памятью
+        resource_manager.golubka_V1 = std::make_shared<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>>(
             std::move(golubka_V1_system),
             std::move(golubka_V1_init_params),
             std::move(golubka_V1_aero_input),
-            golubka_V1_interp_mgr // эта тема нужна и в другом месте, поэтому не передаем владение.
+            resource_manager.golubka_V1_interp_mgr
         );
 
         auto solver = std::make_unique<RungeKutta4Solver<GLOBAL_CONFIG::PROJECT_TYPE, GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE>>();
 
         // Создание менеджера объектов
-        auto manager = std::make_shared<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
-        auto golubka_V1_ID = manager->addTrackedObject(golubka_V1);
+        resource_manager.manager = std::make_shared<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
+        auto golubka_V1_ID = resource_manager.manager->addTrackedObject(resource_manager.golubka_V1);
 
         // Callback для проверки продолжения симуляции
         auto continue_callback = [golubka_V1_ID](
@@ -117,19 +133,22 @@ int main() {
             return isMainRocketActive(object_manager, golubka_V1_ID);
         };
 
-
         IModel<GLOBAL_CONFIG::PROJECT_TYPE, GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE> model(
             std::move(solver),
-            std::move(world),
-            std::move(csvDataSaver),
-            std::move(describer),
-            manager,
+            resource_manager.world,
+            std::move(resource_manager.csvDataSaver),
+            std::move(resource_manager.describer),
+            resource_manager.manager,
             std::move(continue_callback),
             0.01
         );
 
         model.run();
-        csvDataSaver->save();
+
+        // Явное сохранение перед выходом
+        if (resource_manager.csvDataSaver) {
+            resource_manager.csvDataSaver->save();
+        }
     }
     catch (const std::exception& e) {
         std::cerr << "Main error: " << e.what() << std::endl;
@@ -139,7 +158,6 @@ int main() {
         std::cerr << "Unknown error in main" << std::endl;
         return 1;
     }
-
     return 0;
 }
 // TIP See CLion help at <a

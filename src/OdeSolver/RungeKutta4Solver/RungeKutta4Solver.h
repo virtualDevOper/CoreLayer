@@ -16,42 +16,68 @@ template <typename metricType, typename CallbackType>
 class RungeKutta4Solver final : public ODESolver<metricType, CallbackType> {
 public:
     void solve(
-        std::shared_ptr<ObjectManager<metricType>> object_manager,
-        metricType t_start,
-        metricType step_size,
-        CallbackType continue_callback,
-        SimulationMomento<metricType>& momento
+    std::shared_ptr<ObjectManager<metricType>> object_manager,
+    metricType t_start,
+    metricType step_size,
+    CallbackType continue_callback,
+    SimulationMomento<metricType>& momento
     ) override {
-
-        if (step_size <= static_cast<metricType>(0)) {throw std::invalid_argument("Шаг по времени должен быть положительным, сейчас он: " + std::to_string(step_size));}
-        if (t_start < static_cast<metricType>(0)) {throw std::invalid_argument("Начальное время не может быть отрицательным, сейчас оно: " + std::to_string(t_start));}
-        if (!object_manager || object_manager->getObjectCount() == 0) {throw std::invalid_argument("Нет объектов для обработки!");}
+        if (step_size <= static_cast<metricType>(0)) {
+            throw std::invalid_argument("Шаг по времени должен быть положительным, сейчас он: " + std::to_string(step_size));
+        }
+        if (t_start < static_cast<metricType>(0)) {
+            throw std::invalid_argument("Начальное время не может быть отрицательным, сейчас оно: " + std::to_string(t_start));
+        }
+        if (!object_manager || object_manager->getObjectCount() == 0) {
+            throw std::invalid_argument("Нет объектов для обработки!");
+        }
+        if (!continue_callback) {
+            throw std::invalid_argument("Callback для продолжения симуляции не установлен!");
+        }
 
         metricType current_time = t_start;
         momento.saveStartParams(object_manager->getAllObjects());
         const auto& all_objects = object_manager->getAllObjects();
 
         while (true) {
-            for (const auto& [id, object] : all_objects) {
+            for (const auto& [id, weak_object] : all_objects) {
+                auto object = weak_object.lock();
                 if (!object) continue;
 
+                // Безопасное получение состояния
                 auto& current_state_storage = momento.getStateStorageByID(id);
-                const auto& current_state = current_state_storage.getStates().back();
+                const auto& states = current_state_storage.getStates();
+                if (states.empty()) {
+                    throw std::runtime_error("State storage is empty for object ID: " + std::to_string(id));
+                }
+                const auto& current_state = states.back();
 
                 if (object->isActive()) {
-                    auto new_state = solveOneStepForOneObj(
-                        current_state, current_time, step_size, object->getDynamicSys()
-                    );
-                    momento.addSnapshotByID(id, std::move(new_state));
-                } else { // если неактивен, то замораживается
+                    try {
+                        auto new_state = solveOneStepForOneObj(
+                            current_state, current_time, step_size, object->getDynamicSys()
+                        );
+                        momento.addSnapshotByID(id, std::move(new_state));
+                    } catch (const std::exception& e) {
+                        std::cerr << "Error computing derivatives for object ID " << id
+                                  << " at time " << current_time << ": " << e.what() << std::endl;
+                        throw;
+                    }
+                } else {
                     momento.addSnapshotByID(id, current_state);
                 }
             }
+
             current_time += step_size;
             auto collided_objects_IDs = this->checkCollisions(momento.viewTrackedObjs());
             freezeCollidedObjects(object_manager, collided_objects_IDs);
 
-            if (!continue_callback(object_manager)) {
+            try {
+                if (!continue_callback(object_manager)) {
+                    break;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error in continue callback: " << e.what() << std::endl;
                 break;
             }
         }

@@ -126,8 +126,10 @@ private:
         //TODO
         // == эти параметры вычисляются в абстрактном мире, исправь!!!
 
-        metricType mach = computeMachNumber(V_body.norm());
-        metricType rho = computeAirDensity(state);
+
+        metricType mach = computeMachNumber(V_body.norm(), state.getPosition());
+
+        metricType rho = computeAirDensity(state.getPosition());
 
         // === ШАГ 5: ПОЛУЧИТЬ АЭРОДИНАМИЧЕСКИЕ СИЛЫ И МОМЕНТЫ ===
         // Силы и моменты возвращаются в связной СК!
@@ -236,8 +238,12 @@ private:
         return std::atan2(v_z, -v_y);
     }
 
-    metricType computeMachNumber(metricType V_magnitude) const {
-        return V_magnitude / world_->getAtmosphericModel()->getSpeedOfSound();  // [м/с] скорость звука
+    metricType computeMachNumber(metricType V_magnitude, const Eigen::Vector3<metricType>& position) const {
+        auto world = world_.lock();
+        if (!world || !world->getAtmosphericModel()) {
+            throw std::runtime_error("World or atmospheric model not available");
+        }
+        return V_magnitude / world->getAtmosphericModel()->getSpeedOfSound(position);
     }
 
 
@@ -330,6 +336,11 @@ private:
         // dθ/dt (тангаж) — ИСПРАВЛЕНО!
         dEuler_dt(0) = w_y * sin_gamma + w_z * cos_gamma;
 
+        // Проверка на нечисловые значения
+        if (!std::isfinite(dEuler_dt(0)) || !std::isfinite(dEuler_dt(1)) || !std::isfinite(dEuler_dt(2))) {
+            throw std::runtime_error("Non-finite values in Euler angles derivatives at time t");
+        }
+
         return dEuler_dt;
     }
 
@@ -364,5 +375,13 @@ private:
         dOmega_dt(2) = (M_z - (I_y - I_x) * w_x * w_y) / I_z;
 
         return dOmega_dt;
+    }
+
+    metricType computeAirDensity(const Eigen::Vector3<metricType>& position) const {
+        auto world = world_.lock();
+        if (!world || !world->getAtmosphericModel()) {
+            throw std::runtime_error("World or atmospheric model not available");
+        }
+        return world->getAtmosphericModel()->getDensity(position);
     }
 };

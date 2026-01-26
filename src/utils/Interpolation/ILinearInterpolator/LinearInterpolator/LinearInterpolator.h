@@ -21,8 +21,18 @@ public:
     }
 
     metricType interpolate(const metricType x) const override {
+        if (x_data_.empty() || y_data_.empty()) {
+            throw std::runtime_error("Interpolation table is empty");
+        }
+
         auto min_max = std::minmax_element(x_data_.begin(), x_data_.end());
-        if (x < *min_max.first || x > *min_max.second) {throw std::invalid_argument("значение интерполируемой переменной вне таблицы");}
+        if (x < *min_max.first) {
+            return y_data_.front();  // Экстраполяция вниз
+        }
+        if (x > *min_max.second) {
+            return y_data_.back();   // Экстраполяция вверх
+        }
+
         size_t idx = 0;
         while (idx < x_data_.size() - 1 && x_data_[idx + 1] < x) ++idx;
         if (idx >= x_data_.size() - 1) return y_data_.back();
@@ -31,6 +41,7 @@ public:
         const metricType x1 = x_data_[idx + 1];
         const metricType y0 = y_data_[idx];
         const metricType y1 = y_data_[idx + 1];
+
         return y0 + ((y1 - y0) / (x1 - x0)) * (x - x0);
     }
 
