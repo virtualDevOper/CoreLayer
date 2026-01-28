@@ -4,6 +4,9 @@
 
 dataTables/
 libs/
+results_data/simulation_data_*.txt
+docs/uml/*.puml
+tools/__pycache__/
 ### C++ ###
 # Prerequisites
 *.d

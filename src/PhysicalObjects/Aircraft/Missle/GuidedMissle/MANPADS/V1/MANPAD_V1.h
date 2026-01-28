@@ -5,7 +5,7 @@
 #include "../../GuidedMissle.h"
 #include "../../../../../../DynamicsSystem/ExtensionModels//Aerodinamics/AeroInput/RocketAeroInput.h"
 #include "../../../../../../utils/ObjInitParams.h"
-#include "../../../../../../DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModel.h"
+#include "../../../../../../DynamicsSystem/ExtensionModels/Aerodinamics/IAeroModel.h"
 /**
 * \brief Класс реализации ЗУР_1_версия
 *
@@ -29,34 +29,17 @@ public:
         std::unique_ptr<IDynamicsSystem<metricType>> sys,
         std::unique_ptr<ObjInitParams<metricType>> initial_params,
         std::unique_ptr<RocketAeroInput<metricType>> aero_input,
-        std::shared_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr)
+        std::shared_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr,
+        std::shared_ptr<IAeroModel<metricType>> aero_model)
         : GuidedMissle<metricType, RocketAeroInput<metricType>>(
             std::move(sys),
             std::move(initial_params),
             std::move(aero_input),
             comp_interp_mgr),
-          aero_model_(std::make_unique<FullAeroModel<metricType>>(
-              this->getAeroInput(),
-              comp_interp_mgr))
+          aero_model_(std::move(aero_model))
     {
         if (!aero_model_) {
-            throw std::runtime_error("Failed to create aerodynamic model");
-        }
-
-        // Дополнительная инициализация начального снапшота массой и инерцией
-        if (comp_interp_mgr) {
-            auto kinematics = KinematicState<metricType>::createBuilder()
-                .setPosition(this->presentSnapshot_->getPosition())
-                .setVelocity(this->presentSnapshot_->getVelocity())
-                .setEulerAngles(this->presentSnapshot_->getEulerAngles())
-                .setAngularVelocity(this->presentSnapshot_->getAngularVelocity())
-                .build();
-
-            auto new_snapshot = ObjSnapshot<metricType>::createBuilder(kinematics)
-                .setMass(comp_interp_mgr->getMass(0.0f))
-                .setInertia(comp_interp_mgr->getInertia(0.0f))
-                .buildUnique();
-            this->updateSnapshot(std::move(new_snapshot));
+            throw std::invalid_argument("MANPAD_V1: aero_model cannot be null");
         }
     }
 
@@ -73,5 +56,5 @@ public:
     }
 
 private:
-    std::unique_ptr<FullAeroModel<metricType>> aero_model_;
+    std::shared_ptr<IAeroModel<metricType>> aero_model_;
 };

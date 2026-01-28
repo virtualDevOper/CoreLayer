@@ -52,17 +52,10 @@ public:
         if (!manager) throw std::runtime_error("Interpolation manager expired");
         return manager->getThrust(t);
     }
-
-    // ВРЕМЕННАЯ ЗАГЛУШКА — реальные силы вычисляются в FullRocketODE через интерфейс
-    Eigen::Vector3<metricType> getAerodynamicForces(metricType t) const {
-        return Eigen::Vector3<metricType>::Zero();
-    }
-
-    Eigen::Vector3<metricType> getAerodynamicMoments(metricType t) const {
-        return Eigen::Vector3<metricType>::Zero();
-    }
-
-    // КРИТИЧЕСКИ ВАЖНЫЙ МЕТОД ДЛЯ ДОСТУПА К АЭРОДИНАМИКЕ
+    
+    /// \brief Доступ к текущей аэродинамической модели
+    ///
+    /// Вся физика аэродинамики инкапсулирована в IAeroModel и её реализациях.
     std::shared_ptr<IAeroModel<metricType>> getAeroModel() const {
         return aero_model_;
     }

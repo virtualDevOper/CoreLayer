@@ -17,79 +17,108 @@ public:
     explicit CsvSaveStrategy(std::string  filename): filename_(std::move(filename)) {}
 
     void save(const std::vector<StateStorage<metricType>>& data) override {
-        // Открываем файл для записи (перезаписываем)
-        std::ofstream file(filename_, std::ios::trunc);
-        if (!file.is_open()) {
-            throw std::runtime_error("Cannot open file: " + filename_);
-        }
-
+        // Для каждого объекта создаём отдельный файл results_data/simulation_data_<id>.txt
         try {
-            const std::set<std::string> allParamNames = collectAllParamNames(data);
-            writeCsvHeader(file, allParamNames);
-            writeCsvData(file, data, allParamNames);
-            file.flush(); // сразу записываем
+            for (const auto& storage : data) {
+                saveSingleStorage(storage);
+            }
         } catch (const std::exception& e) {
-            file.close();
             throw std::runtime_error(std::string("CSV write error: ") + e.what());
         }
-
-        file.close();
     }
 
 private:
     std::string filename_;
 
-    std::set<std::string> collectAllParamNames(const std::vector<StateStorage<metricType>>& data) {
-        std::set<std::string> paramNames;
-        for (const auto& storage : data) {
-            for (const auto& snapshot : storage.getStates()) {
-                for (const auto& params = snapshot.getParams(); const auto& [paramName, _] : params) {
-                    paramNames.insert(paramName);
-                }
-            }
+    // Строим путь вида <dir>/simulation_data_<id>.txt
+    std::string buildFilenameForId(int objectId) const {
+        std::string base = filename_;
+        // Отделяем директорию
+        std::string dir;
+        auto pos = base.find_last_of("/\\");
+        if (pos != std::string::npos) {
+            dir = base.substr(0, pos);
+        } else {
+            dir = ".";
         }
-        return paramNames;
+        return dir + "/simulation_data_" + std::to_string(objectId) + ".txt";
     }
 
-    void writeCsvHeader(std::ofstream& file, const std::set<std::string>& paramNames) {
-        file << "object_id,snapshot_index";
-        // Добавляем названия параметров в заголовок
+    void saveSingleStorage(const StateStorage<metricType>& storage) {
+        int objectId = storage.getId();
+        const auto& states = storage.getStates();
+        if (states.empty()) {
+            return;
+        }
+
+        // Собираем множество имён параметров для данного объекта
+        std::set<std::string> paramNames;
+        for (const auto& snapshot : states) {
+            for (const auto& params = snapshot.getParams(); const auto& [paramName, _] : params) {
+                paramNames.insert(paramName);
+            }
+        }
+
+        // Отдельно выделяем time, чтобы поставить его первым
+        bool hasTime = paramNames.erase("time") > 0;
+
+        const std::string outName = buildFilenameForId(objectId);
+        std::ofstream file(outName, std::ios::trunc);
+        if (!file.is_open()) {
+            throw std::runtime_error("Cannot open file: " + outName);
+        }
+
+        // Заголовок: time, затем остальные параметры в алфавитном порядке
+        bool first = true;
+        if (hasTime) {
+            file << "time";
+            first = false;
+        }
         for (const auto& paramName : paramNames) {
-            file << "," << escapeCsvField(paramName);
+            if (first) {
+                file << escapeCsvField(paramName);
+                first = false;
+            } else {
+                file << "," << escapeCsvField(paramName);
+            }
         }
         file << "\n";
-    }
 
-    // Записывает данные в CSV формате
-    void writeCsvData(std::ofstream& file,
-                      const std::vector<StateStorage<metricType>>& data,
-                      const std::set<std::string>& paramNames) {
-        for (const auto& storage : data) {
-            int objectId = storage.getId();
-            const auto& states = storage.getStates();
-            for (size_t snapshotIndex = 0; snapshotIndex < states.size(); ++snapshotIndex) {
-                const auto& snapshot = states[snapshotIndex];
-                const auto& params = snapshot.getParams();
+        // Данные
+        for (const auto& snapshot : states) {
+            const auto& params = snapshot.getParams();
 
-                // object_id и snapshot_index
-                file << objectId << "," << snapshotIndex;
-
-                // Значения параметров в том же порядке, что и в заголовке
-                for (const auto& paramName : paramNames) {
-                    file << ",";
-                    auto it = params.find(paramName);
-                    if (it != params.end()) {
-                        metricType value = it->second;
-                        // Пропускаем NaN значения (оставляем пустую ячейку)
-                        if (!std::isnan(value)) {
-                            file << value;
-                        }
-                    }
-                    // Если параметра нет или он имеет NaN - оставляем пустую ячейку
+            // time
+            bool firstField = true;
+            if (hasTime) {
+                auto it = params.find("time");
+                metricType value = (it != params.end()) ? it->second : std::numeric_limits<metricType>::quiet_NaN();
+                if (!std::isnan(value)) {
+                    file << value;
                 }
-                file << "\n";
+                firstField = false;
             }
+
+            // остальные параметры
+            for (const auto& paramName : paramNames) {
+                if (firstField) {
+                    // первый параметр в строке (если нет времени)
+                    firstField = false;
+                } else {
+                    file << ",";
+                }
+                auto it = params.find(paramName);
+                if (it != params.end()) {
+                    metricType value = it->second;
+                    if (!std::isnan(value)) {
+                        file << value;
+                    }
+                }
+            }
+            file << "\n";
         }
+
+        file.close();
     }
 
     // Экранирует поле CSV если нужно

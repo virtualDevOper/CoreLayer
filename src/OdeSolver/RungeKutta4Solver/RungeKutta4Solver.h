@@ -6,6 +6,17 @@
 #include "../ODESolver.h"
 #include "../../utils/KinematicState.h"  // ← НОВАЯ ЗАВИСИМОСТЬ
 
+/**
+ * \brief Четвёртый порядок метода Рунге–Кутты для интегрирования систем ОДУ.
+ *
+ * \tparam metricType  Тип данных для метрических величин.
+ * \tparam CallbackType Тип колбэка продолжения интегрирования (останавливает расчёт по условию).
+ *
+ * \details Интегрирует только кинематическую часть состояния (KinematicState),
+ * вызывая IDynamicsSystem::get_rhs_derivatives. На каждом шаге сохраняет
+ * снимки состояний в SimulationMomento и использует колбэк для проверки
+ * условий остановки (например, удар о землю).
+ */
 template <typename metricType, typename CallbackType>
 class RungeKutta4Solver final : public ODESolver<metricType, CallbackType> {
 public:

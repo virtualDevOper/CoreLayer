@@ -12,8 +12,7 @@
 * \details Позволяет подключать разные реализации аэродинамики
 * (упрощённую, полную, табличную) без изменения ядра симуляции
 */
-#pragma once
-#include "../../../../PCH.h"
+
 
 template<typename metricType>
 class IAeroModel {

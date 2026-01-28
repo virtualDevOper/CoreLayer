@@ -3,6 +3,8 @@ project(CoreLayer)
 
 set(CMAKE_CXX_STANDARD 23)
 
+
+
 add_executable(CoreLayer main.cpp
         PCH.h
         include/publicCore/Model.h
@@ -48,6 +50,7 @@ add_executable(CoreLayer main.cpp
         src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModel.cpp
         src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModel.h
+        src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModelAdapter.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/RocketAeroInput.h
         src/utils/ObjInitParams.h
         GLOBAL_CONFIG.h
@@ -80,4 +83,9 @@ add_executable(CoreLayer main.cpp
         src/DynamicsSystem/ExtensionModels/Aerodinamics/IAeroModel.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/SimpleAeroModel.h
         src/utils/KinematicState.h
+        src/utils/SimulationConfig.cpp
+        src/utils/SimulationConfig.h
 )
+
+
+

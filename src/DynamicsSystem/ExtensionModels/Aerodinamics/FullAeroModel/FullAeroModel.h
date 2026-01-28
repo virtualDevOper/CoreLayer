@@ -58,16 +58,16 @@ public:
         if (V_mag < 1e-6) return Eigen::Vector3<metricType>::Zero();
 
         metricType alpha = computeAlpha(velocity);
-        metricType beta = computeBeta(velocity);
         metricType mach = computeMach(V_mag);
 
         metricType q_dynamic = 0.5 * rho * V_mag * V_mag;
         metricType reference_area = M_PI * aero_input_.D_mid * aero_input_.D_mid / 4.0;
 
-        // Получаем коэффициенты
+        // Получаем коэффициенты (в текущем ComponentInterpolationManager
+        // коэффициенты зависят только от (alpha, mach))
         metricType C_x = interp_mgr_->getCxAero(alpha, mach);
-        metricType C_y = interp_mgr_->getCyAero(alpha, beta, mach);
-        metricType C_z = interp_mgr_->getCzAero(alpha, beta, mach);
+        metricType C_y = interp_mgr_->getCyAero(alpha, mach);
+        metricType C_z = interp_mgr_->getCzAero(alpha, mach);
 
         return q_dynamic * reference_area * Eigen::Vector3<metricType>(C_x, C_y, C_z);
     }
@@ -141,105 +141,39 @@ private:
 
     // === МОМЕНТ КРЕНА ===
     metricType computeMomentX(
-        metricType alpha, metricType beta, metricType alpha_p, metricType phi_p,
-        metricType mach, metricType wx, metricType V_mag,
-        const std::vector<metricType>& rudder_deflections,
-        metricType q_dynamic, metricType reference_area) const {
+        metricType /*alpha*/, metricType /*beta*/, metricType /*alpha_p*/, metricType /*phi_p*/,
+        metricType /*mach*/, metricType /*wx*/, metricType /*V_mag*/,
+        const std::vector<metricType>& /*rudder_deflections*/,
+        metricType /*q_dynamic*/, metricType /*reference_area*/) const {
 
-        metricType wx_bezr = wx * 0.251 / V_mag;
-
-        // Компоненты от стабилизаторов и рулей
-        metricType first_component = 0, second_component = 0;
-        for (int i = 0; i < aero_input_.rudder_count; i++) {
-            metricType alpha_st_i = computeAlphaSt(alpha_p, phi_p, i);
-            metricType alpha_r_i = computeAlphaR(alpha_p, phi_p, i, rudder_deflections);
-
-            first_component += interp_mgr_->getCyKonsStAero(mach, alpha_st_i);
-            second_component += interp_mgr_->getCyKonspAero(mach, alpha_r_i, rudder_deflections[i]);
-        }
-
-        metricType mx_static = -first_component * ((0.0355 + 0.09 * 0.45) / 0.251)
-                              - second_component * ((0.0355 + 0.05 * 0.45) / 0.251);
-
-        metricType mx_damping = interp_mgr_->getMxWxAero(mach) * wx_bezr;
-
-        return q_dynamic * reference_area * aero_input_.L_sum_kr * (mx_static + mx_damping);
+        // TODO: детализированная модель моментов по крену требует
+        // дополнительных аэродинамических производных, которых пока нет
+        // в ComponentInterpolationManager. Временная заглушка.
+        return static_cast<metricType>(0);
     }
 
     // === МОМЕНТ ТАНГАЖА ===
     metricType computeMomentY(
-        metricType alpha, metricType beta, metricType alpha_p, metricType phi_p,
-        metricType mach, metricType wy, metricType V_mag, metricType Xm,
-        const std::vector<metricType>& rudder_deflections,
-        metricType q_dynamic, metricType reference_area) const {
+        metricType /*alpha*/, metricType /*beta*/, metricType /*alpha_p*/, metricType /*phi_p*/,
+        metricType /*mach*/, metricType /*wy*/, metricType /*V_mag*/, metricType /*Xm*/,
+        const std::vector<metricType>& /*rudder_deflections*/,
+        metricType /*q_dynamic*/, metricType /*reference_area*/) const {
 
-        metricType wy_bezr = wy * aero_input_.L_har / V_mag;
-
-        metricType cy_k = interp_mgr_->getCyKAero(mach, alpha_p);
-        metricType xd_k = interp_mgr_->getXdKAero(alpha_p, mach);
-        metricType cy_st_1deg = interp_mgr_->getCyKonsStAero(mach, 1.0 * M_PI / 180.0);
-        metricType alpha_skotn = interp_mgr_->getAlphaSkOtnAero(mach, alpha_p);
-        metricType mz_wz_coeff = interp_mgr_->getMzWzAero(Xm, mach);
-
-        // Компоненты
-        metricType first_comp = 0, second_comp = 0, third_comp = 0;
-        for (int i = 0; i < aero_input_.rudder_count; i++) {
-            metricType alpha_st_i = computeAlphaSt(alpha_p, phi_p, i);
-            metricType alpha_r_i = computeAlphaR(alpha_p, phi_p, i, rudder_deflections);
-            metricType phi_st_i = getPhi0St(i) + phi_p;
-            metricType phi_r_i = getPhi0R(i) + phi_p;
-
-            first_comp += interp_mgr_->getCyKonsStAero(mach, alpha_st_i) * std::sin(phi_st_i);
-            second_comp += interp_mgr_->getCyKonspAero(mach, alpha_r_i, rudder_deflections[i]) * std::sin(phi_r_i);
-            third_comp += interp_mgr_->getCyKonspAero(mach, alpha_r_i, rudder_deflections[i]) * std::sin(phi_r_i);
-        }
-
-        metricType L_har_inv = 1.0 / aero_input_.L_har;
-
-        return q_dynamic * reference_area * aero_input_.L_har *
-               (-cy_k * std::sin(phi_p) * (Xm - xd_k) * L_har_inv
-                + first_comp * (Xm - aero_input_.Xdst) * L_har_inv
-                + 1.465 * second_comp * (Xm - aero_input_.Xdp) * L_har_inv
-                + mz_wz_coeff * wy_bezr
-                - 2.0 * cy_st_1deg * 1.465 * third_comp * alpha_skotn * (Xm - aero_input_.Xdst) * L_har_inv);
+        // TODO: аналогично computeMomentX, полноценная модель требует
+        // набора аэродинамических производных, которые пока не реализованы.
+        return static_cast<metricType>(0);
     }
 
     // === МОМЕНТ РЫСКАНИЯ ===
     metricType computeMomentZ(
-        metricType alpha, metricType beta, metricType alpha_p, metricType phi_p,
-        metricType mach, metricType wz, metricType V_mag, metricType Xm,
-        const std::vector<metricType>& rudder_deflections,
-        metricType q_dynamic, metricType reference_area) const {
+        metricType /*alpha*/, metricType /*beta*/, metricType /*alpha_p*/, metricType /*phi_p*/,
+        metricType /*mach*/, metricType /*wz*/, metricType /*V_mag*/, metricType /*Xm*/,
+        const std::vector<metricType>& /*rudder_deflections*/,
+        metricType /*q_dynamic*/, metricType /*reference_area*/) const {
 
-        metricType wz_bezr = wz * aero_input_.L_har / V_mag;
-
-        metricType cy_k = interp_mgr_->getCyKAero(mach, alpha_p);
-        metricType xd_k = interp_mgr_->getXdKAero(alpha_p, mach);
-        metricType cy_st_1deg = interp_mgr_->getCyKonsStAero(mach, 1.0 * M_PI / 180.0);
-        metricType alpha_skotn = interp_mgr_->getAlphaSkOtnAero(mach, alpha_p);
-        metricType mz_wz_coeff = interp_mgr_->getMzWzAero(Xm, mach);
-
-        // Компоненты
-        metricType first_comp = 0, second_comp = 0, third_comp = 0;
-        for (int i = 0; i < aero_input_.rudder_count; i++) {
-            metricType alpha_st_i = computeAlphaSt(alpha_p, phi_p, i);
-            metricType alpha_r_i = computeAlphaR(alpha_p, phi_p, i, rudder_deflections);
-            metricType phi_st_i = getPhi0St(i) + phi_p;
-            metricType phi_r_i = getPhi0R(i) + phi_p;
-
-            first_comp += interp_mgr_->getCyKonsStAero(mach, alpha_st_i) * std::cos(phi_st_i);
-            second_comp += interp_mgr_->getCyKonspAero(mach, alpha_r_i, rudder_deflections[i]) * std::cos(phi_r_i);
-            third_comp += interp_mgr_->getCyKonspAero(mach, alpha_r_i, rudder_deflections[i]) * std::cos(phi_r_i);
-        }
-
-        metricType L_har_inv = 1.0 / aero_input_.L_har;
-
-        return q_dynamic * reference_area * aero_input_.L_har *
-               (cy_k * std::cos(phi_p) * (Xm - xd_k) * L_har_inv
-                + first_comp * (Xm - aero_input_.Xdst) * L_har_inv
-                + 1.465 * second_comp * (Xm - aero_input_.Xdp) * L_har_inv
-                + mz_wz_coeff * wz_bezr
-                - 2.0 * cy_st_1deg * 1.465 * third_comp * alpha_skotn * (Xm - aero_input_.Xdst) * L_har_inv);
+        // TODO: заглушка для рыскательного момента по тем же причинам,
+        // что и в computeMomentX/computeMomentY.
+        return static_cast<metricType>(0);
     }
 
     // === ВСПОМОГАТЕЛЬНЫЕ ВЫЧИСЛЕНИЯ ===

@@ -6,6 +6,16 @@
 #include "../../utils/ConeDirection/ConeDirection.h"
 #include "../../utils/DynamicParametersProviderForFullRocketModel.h"
 
+/**
+ * \brief Полная система ОДУ для твёрдого тела (ракеты) в 6 степенях свободы.
+ *
+ * \tparam metricType Тип данных для метрических величин.
+ *
+ * \details Инкапсулирует правые части уравнений движения:
+ * трансформации между земной и связанной СК, расчёт аэродинамических сил,
+ * моментов, гравитации и инерционных эффектов. Используется интегратором
+ * RungeKutta4Solver для пошагового расчёта траектории.
+ */
 template <typename metricType>
 class FullRocketODE final : public IDynamicsSystem<metricType> {
 private:
@@ -108,11 +118,34 @@ public:
             throw std::runtime_error("DynamicParametersProvider expired in augmentSnapshot");
         }
 
+        // Пересчёт сил и моментов из связанной СК в земную для логирования
+        const auto& euler = kinematics.getEulerAngles();
+        std::array<metricType, 3> F_body_arr = {
+            last_computed_forces_.x(),
+            last_computed_forces_.y(),
+            last_computed_forces_.z()
+        };
+        auto F_earth_arr = TransformationFactory<metricType>::createBodyToEarthTransform(
+            euler.x(), euler.y(), euler.z(), F_body_arr)->result_getter();
+        Eigen::Vector3<metricType> F_earth(F_earth_arr[0], F_earth_arr[1], F_earth_arr[2]);
+
+        std::array<metricType, 3> M_body_arr = {
+            last_computed_moments_.x(),
+            last_computed_moments_.y(),
+            last_computed_moments_.z()
+        };
+        auto M_earth_arr = TransformationFactory<metricType>::createBodyToEarthTransform(
+            euler.x(), euler.y(), euler.z(), M_body_arr)->result_getter();
+        Eigen::Vector3<metricType> M_earth(M_earth_arr[0], M_earth_arr[1], M_earth_arr[2]);
+
         return ObjSnapshot<metricType>::createBuilder(kinematics)
+            .setTime(t)
             .setMass(params_provider->getMass(t))
             .setInertia(params_provider->getInertia(t))
             .setTotalForce(last_computed_forces_)
             .setTotalMoment(last_computed_moments_)
+            .setTotalForceEarth(F_earth)
+            .setTotalMomentEarth(M_earth)
             .buildUnique();
     }
 
