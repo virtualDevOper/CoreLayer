@@ -4,9 +4,8 @@
 
 #pragma once
 #include "../../../PCH.h"
-#include "../Interpolation/ILinearInterpolator/ILinearInterpolator.h"
 
-template<typename metricType, typename InterpolationType>
+template<typename InterpolationType>
 class IDataUploader {
 public:
     IDataUploader() = default;

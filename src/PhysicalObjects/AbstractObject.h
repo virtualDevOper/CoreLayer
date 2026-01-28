@@ -22,26 +22,27 @@
 //TODO
 // === Нужно сделать реальные параметры и параметры, которые были рассчитаны на внутреннем вычислителе с датчиков  ===
 
-
 template<typename metricType>
 class AbstractObject {
 public:
     explicit AbstractObject(
         std::unique_ptr<IDynamicsSystem<metricType>> sys,
         std::unique_ptr<ObjInitParams<metricType>> init_params)
-        : sys_(std::move(sys)) {
-
+        : sys_(std::move(sys))
+    {
         if (!init_params || !sys_) {
             throw std::invalid_argument("ObjInitParams или DynamicsSystem не может быть null");
         }
 
-        presentSnapshot_ = ObjSnapshot<metricType>::createBuilder()
+        // Создаём кинематику через Builder
+        auto kinematics = KinematicState<metricType>::createBuilder()
             .setPosition(init_params->position)
             .setVelocity(init_params->velocity)
             .setEulerAngles(init_params->eulerAngles)
             .setAngularVelocity(init_params->angularVelocity)
-            .buildUnique();
+            .build();
 
+        presentSnapshot_ = ObjSnapshot<metricType>::createBuilder(kinematics).buildUnique();
         if (!presentSnapshot_) {
             throw std::runtime_error("Failed to create initial snapshot");
         }
@@ -74,22 +75,18 @@ public:
 
     // === СТАТУС ОБЪЕКТА ===
     enum class ObjectState { ACTIVE, DESTROYED, COLLIDED };
-
     void setActive() { currentState_ = ObjectState::ACTIVE; }
     void setDestroyed() { currentState_ = ObjectState::DESTROYED; }
     void setCollided() { currentState_ = ObjectState::COLLIDED; }
-
     [[nodiscard]] bool isActive() const noexcept { return currentState_ == ObjectState::ACTIVE; }
     [[nodiscard]] bool isCollided() const noexcept { return currentState_ == ObjectState::COLLIDED; }
     [[nodiscard]] bool isDestroyed() const noexcept { return currentState_ == ObjectState::DESTROYED; }
 
 protected:
     std::unique_ptr<ObjSnapshot<metricType>> presentSnapshot_;
-    std::shared_ptr<IDynamicsSystem<metricType>> sys_; // Изменено на shared_ptr для безопасного доступа
+    std::shared_ptr<IDynamicsSystem<metricType>> sys_;
     ObjectState currentState_ = ObjectState::ACTIVE;
 
-    // Запрещаем копирование
     AbstractObject(const AbstractObject&) = delete;
     AbstractObject& operator=(const AbstractObject&) = delete;
 };
-

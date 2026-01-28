@@ -27,11 +27,11 @@ public:
     virtual ICoriolisModel<metricType>* getCoriolisModel() const = 0;
     virtual ITerrainModel<metricType>* getTerrainModel() const = 0;
 
-    virtual bool hasWindModel() const = 0;
-    virtual bool hasAtmosphericModel() const = 0;
-    virtual bool hasGravityModel() const = 0;
-    virtual bool hasCoriolisModel() const = 0;
-    virtual bool hasTerrainModel() const = 0;
+    [[nodiscard]] virtual bool hasWindModel() const = 0;
+    [[nodiscard]] virtual bool hasAtmosphericModel() const = 0;
+    [[nodiscard]] virtual bool hasGravityModel() const = 0;
+    [[nodiscard]] virtual bool hasCoriolisModel() const = 0;
+    [[nodiscard]] virtual bool hasTerrainModel() const = 0;
 
     /* TODO
     virtual void setInteractionSystem(std::unique_ptr<IInteractionSystem> interactionSystem) = 0;

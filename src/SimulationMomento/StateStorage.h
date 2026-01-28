@@ -4,7 +4,6 @@
 //
 
 #pragma once
-#pragma once
 #include "../utils/ObjSnapshot.h"
 
 /**
@@ -31,7 +30,6 @@ public:
     StateStorage(StateStorage&& other) noexcept
         : id_(other.id_), states_(std::move(other.states_)) {}
 
-    // Две версии addState для разных случаев
     void addState(const ObjSnapshot<MetricType>& snapshot) {
         states_.push_back(snapshot);
     }
@@ -40,8 +38,10 @@ public:
         states_.push_back(std::move(snapshot));
     }
 
-    void addState(std::unique_ptr<ObjSnapshot<MetricType>> snapshot) {
-        states_.push_back(std::move(*snapshot));
+    void addState(std::unique_ptr<ObjSnapshot<MetricType>> state) {
+        if (state) {
+            states_.push_back(std::move(*state));
+        }
     }
 
     const std::vector<ObjSnapshot<MetricType>>& getStates() const { return states_; }

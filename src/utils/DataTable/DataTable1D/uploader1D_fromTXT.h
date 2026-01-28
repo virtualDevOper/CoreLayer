@@ -3,6 +3,8 @@
 //
 
 #pragma once
+#include <utility>
+
 #include "../../../../PCH.h"
 #include "../IDataUploader.h"
 #include "../../Interpolation/ILinearInterpolator/LinearInterpolator/LinearInterpolator.h"
@@ -20,12 +22,12 @@
  */
 
 template<typename metricType>
-class uploader1D_fromTXT final:public IDataUploader<metricType,ILinearInterpolator<metricType>> {
+class uploader1D_fromTXT final:public IDataUploader<ILinearInterpolator<metricType>> {
 protected:
     const std::string filename_;
 public:
-    explicit uploader1D_fromTXT(const std::string &filename)
-    : filename_("../" + filename)  {};
+    explicit uploader1D_fromTXT(std::string filename)
+    : filename_(std::move(filename))  {};
     ~uploader1D_fromTXT() override = default;
     std::unique_ptr<ILinearInterpolator<metricType>> loadFromFile() override {
         std::ifstream file(filename_);

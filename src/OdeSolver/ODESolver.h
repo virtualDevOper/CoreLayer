@@ -3,7 +3,7 @@
 //
 #pragma once
 #include "../../PCH.h"
-#include "../PhysicalObjects/ObjectManager.h"
+#include "../utils/ObjManager/IObjectManager.h"
 #include "../SimulationMomento/SimulationMomento.h"
 
 //TODO
@@ -15,7 +15,7 @@ public:
     virtual ~ODESolver() = default;
 
     virtual void solve(
-        std::shared_ptr<ObjectManager<metricType>> object_manager,
+        std::shared_ptr<IObjectManager<metricType>> object_manager,
         metricType t_start,
         metricType step_size,
         CallbackType continue_callback,

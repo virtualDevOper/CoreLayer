@@ -3,9 +3,8 @@
 //
 
 #pragma once
-#include "AbstractObject.h"
-#include "../../PCH.h"
-#include "Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.h"
+
+#include "IObjectManager.h"
 
 
 /**
@@ -18,7 +17,7 @@
  * Скорее всего в ЛА будет решаться задача динамики полета с датчиков, так что смотри по ситуации.
  */
 template <typename metricType>
-class ObjectManager {
+class ObjectManager final : public IObjectManager<metricType> {
 private:
     std::unordered_map<int, std::shared_ptr<AbstractObject<metricType>>> all_objects_;
     std::atomic<int> next_id_{0};
@@ -31,36 +30,36 @@ public:
     ObjectManager& operator=(const ObjectManager&) = delete;
 
 
-    int addTrackedObject(std::shared_ptr<AbstractObject<metricType>> object) {
+    int addTrackedObject(std::shared_ptr<AbstractObject<metricType>> object) override {
         std::lock_guard<std::mutex> lock(mutex_);
         int id = next_id_++;
         all_objects_.emplace(id, std::move(object));
         return id;
     }
 
-    std::shared_ptr<AbstractObject<metricType>> getObjectByID(int id) const {
+    std::shared_ptr<AbstractObject<metricType>> getObjectByID(int id) const override {
         std::lock_guard lock(mutex_);
         auto it = all_objects_.find(id);
         return (it != all_objects_.end()) ? it->second : nullptr;
     }
 
-    bool removeObjectById(int id) {
+    bool removeObjectById(int id) override {
         std::lock_guard lock(mutex_);
         return all_objects_.erase(id) > 0;
     }
 
-    size_t getObjectCount() const {
+    size_t getObjectCount() const override {
         std::lock_guard lock(mutex_);
         return all_objects_.size();
     }
 
-    void clearAllObjects() {
+    void clearAllObjects() override {
         std::lock_guard lock(mutex_);
         all_objects_.clear();
     }
 
     // Получение всех объектов для решателя
-    std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> getAllObjects() const {
+    std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> getAllObjects() const override {
         std::lock_guard lock(mutex_);
         std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> objects;
         objects.reserve(all_objects_.size());

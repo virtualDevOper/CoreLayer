@@ -19,7 +19,7 @@ public:
 
         // Проверка корректности данных аэродинамики
         if (aero_input_.rudder_count <= 0 || aero_input_.D_mid <= 0) {
-            throw std::invalid_argument("Invalid aerodynamic input parameters");
+            throw std::invalid_argument("Invalid aerodynamic input parameters"); // ну это бред так-то
         }
     }
 

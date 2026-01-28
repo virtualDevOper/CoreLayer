@@ -51,8 +51,8 @@ add_executable(CoreLayer main.cpp
         src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/RocketAeroInput.h
         src/utils/ObjInitParams.h
         GLOBAL_CONFIG.h
-        src/PhysicalObjects/ObjectManager.cpp
-        src/PhysicalObjects/ObjectManager.h
+        src/utils/ObjManager/ObjectManager.cpp
+        src/utils/ObjManager/ObjectManager.h
         src/utils/SimulationDescriber.h
         src/utils/ContinuationCallback.h
         src/utils/Interpolation/ILinearInterpolator/ILinearInterpolator.h
@@ -76,4 +76,8 @@ add_executable(CoreLayer main.cpp
         src/utils/ConeDirection/ConeDirection.cpp
         src/utils/ConeDirection/ConeDirection.h
         src/utils/DynamicParametersProviderForFullRocketModel.h
+        src/utils/ObjManager/IObjectManager.h
+        src/DynamicsSystem/ExtensionModels/Aerodinamics/IAeroModel.h
+        src/DynamicsSystem/ExtensionModels/Aerodinamics/SimpleAeroModel.h
+        src/utils/KinematicState.h
 )

@@ -3,8 +3,9 @@
 //
 
 #pragma once
-#include "ILinearInterpolator/LinearInterpolator/LinearInterpolator.h"
-#include "IBilinearInterpolator/BilinearInterpolator/BilinearInterpolator.h"
+#include "../../../PCH.h"
+#include "ILinearInterpolator/ILinearInterpolator.h"
+#include "IBilinearInterpolator/IBilinearInterpolator.h"
 
 /**
  * \brief Гибкий менеджер интерполяции компонентов с опциональными полями

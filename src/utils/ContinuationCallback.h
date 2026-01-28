@@ -4,13 +4,15 @@
 
 #pragma once
 #include "../../PCH.h"
-#include "../PhysicalObjects/ObjectManager.h"
+#include "../utils/ObjManager/IObjectManager.h"
 #include "../../GLOBAL_CONFIG.h"
 
 
-inline bool isMainRocketActive(const std::shared_ptr<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>> &object_manager, const int mainRocID) {
+inline bool isMainRocketActive(const std::shared_ptr<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>> &object_manager, const int mainRocID) {
     const auto obj = object_manager->getObjectByID(mainRocID);
-    return obj && obj->isActive();
+    if (!obj || !obj->isActive()) return false;
+    const auto& state = obj->getStateSnapshot();
+    return state.getPosition().z() >= 0.0f; // Остановка при ударе о землю
 }
 
 // можно через фабрику сделать, чтобы условия были кастомными.

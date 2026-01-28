@@ -17,13 +17,13 @@
  */
 
 template<typename metricType>
-class uploader2D_fromTXT final:public IDataUploader<metricType,BilinearInterpolator<metricType>> {
+class uploader2D_fromTXT final:public IDataUploader<BilinearInterpolator<metricType>> {
 protected:
     const std::string filename_;
 public:
 
     explicit uploader2D_fromTXT(const std::string &filename)
-    : filename_("../" + filename)  {};
+    : filename_(filename)  {};
     ~uploader2D_fromTXT() override = default;
 
  std::unique_ptr<BilinearInterpolator<metricType>> loadFromFile() override {

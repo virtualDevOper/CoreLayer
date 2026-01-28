@@ -1,16 +1,12 @@
-
 #include "include/publicCore/Model.h"
 #include "src/DynamicsSystem/FullRocketODE/FullRocketODE.h"
 #include "src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.h"
 #include "src/WorldModel/ConcreteWorld/SimpleWorld/SimpleWorld.h"
-
-#include "src//WorldModel/WorldComponents/AtmosphericModel/SimpleAtmosphericModel/AtmosphericModel.h"
-#include "src//WorldModel/WorldComponents/CoriolisModel/NoCoriolisForceModel/NoCoriolisForceModel.h"
+#include "src/WorldModel/WorldComponents/AtmosphericModel/SimpleAtmosphericModel/AtmosphericModel.h"
+#include "src/WorldModel/WorldComponents/CoriolisModel/NoCoriolisForceModel/NoCoriolisForceModel.h"
 #include "src/WorldModel/WorldComponents/GravityModel/KavendishModel/KavendishModel.h"
 #include "src/WorldModel/WorldComponents/ITerrainModel/PlaneTerrain/PlaneTerrain.h"
 #include "src/WorldModel/WorldComponents/WindModel/NoWindModel/NoWindModel.h"
-#include "src/PhysicalObjects/Aircraft/AbstractAircraft.h"
-#include "src/PhysicalObjects/ObjectManager.h"
 #include "PCH.h"
 #include "src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.h"
 #include "src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/RocketAeroInput.h"
@@ -23,27 +19,21 @@
 #include "GLOBAL_CONFIG.h"
 #include "src/PhysicalObjects/SimpleObject/SimpleObject.h"
 #include "src/utils/DynamicParametersProviderForFullRocketModel.h"
+#include "src/utils/ObjManager/ObjectManager.h"
+#include <cmath>
 
-
-//TODO
-// == МАКСИМАЛЬНО БЫСТРО ПОПЫТАТЬСЯ ЗАПУСТИТЬ ПРИЛОЖЕНИЕ И ПОТОМ НАРАЩИВАТЬ МЯСО, А ТО ТАК НИКОГДА НЕ ПОЛУЧИСТЯ
-
-//исправь иерархию классов ЛА, при создании в конструкторе управляемого выстрела абстрактного
-
-// - shared_ptr для владения
-// - weak_ptr для наблюдения
-// - unique_ptr для уникального владения
-
-/*
-Если один класс является естественным владельцем, используйте std::unique_ptr
-Основной владелец использует shared_ptr
-Вторичные классы используют weak_ptr для доступа
-Это предотвращает утечки памяти из-за циклических ссылок.
-*/
+auto loadDataTable = [](const std::string& filename) {
+    try {
+        auto loader = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>(filename);
+        return loader.loadFromFile();
+    } catch (const std::exception& e) {
+        std::cerr << "Error loading data table '" << filename << "': " << e.what() << std::endl;
+        throw;
+    }
+};
 
 int main() {
     try {
-        // RAII обертка для всех ресурсов
         struct ResourceManager {
             std::shared_ptr<SimpleWorld<GLOBAL_CONFIG::PROJECT_TYPE>> world;
             std::unique_ptr<SimulationDescriber> describer;
@@ -51,9 +41,7 @@ int main() {
             std::shared_ptr<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>> manager;
             std::shared_ptr<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>> golubka_V1;
             std::shared_ptr<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>> golubka_V1_interp_mgr;
-
             ~ResourceManager() {
-                // Явное освобождение ресурсов в правильном порядке
                 golubka_V1.reset();
                 manager.reset();
                 csvDataSaver.reset();
@@ -61,7 +49,7 @@ int main() {
             }
         } resource_manager;
 
-        // Инициализация мира
+        // === ШАГ 1: ИНИЦИАЛИЗАЦИЯ МИРА ===
         resource_manager.world = std::make_shared<SimpleWorld<GLOBAL_CONFIG::PROJECT_TYPE>>();
         {
             auto wind = std::make_unique<NoWindModel<GLOBAL_CONFIG::PROJECT_TYPE>>();
@@ -76,30 +64,22 @@ int main() {
             resource_manager.world->setTerrain(std::move(terrain));
         }
 
+        // === ШАГ 2: НАСТРОЙКА СОХРАНЕНИЯ ДАННЫХ ===
         resource_manager.describer = std::make_unique<SimulationDescriber>(3);
         resource_manager.csvDataSaver = std::make_unique<SimulationMomento<GLOBAL_CONFIG::PROJECT_TYPE>>();
-        resource_manager.csvDataSaver->setStrategy(std::make_unique<CsvSaveStrategy<GLOBAL_CONFIG::PROJECT_TYPE>>("simulation_data.csv"));
+        resource_manager.csvDataSaver->setStrategy(std::make_unique<CsvSaveStrategy<GLOBAL_CONFIG::PROJECT_TYPE>>("../results_data/simulation_data.csv"));
+        resource_manager.csvDataSaver->addTrackedObjs({});
 
-        std::vector<StateStorage<GLOBAL_CONFIG::PROJECT_TYPE>> trackedObjects;
-        resource_manager.csvDataSaver->addTrackedObjs(std::move(trackedObjects));
+        // === ШАГ 3: ЗАГРУЗКА ДАННЫХ ===
+        auto Thrust_x_t_data = loadDataTable("../dataTables/golubka_V1/Thrusts/Thrust_x_t.txt");
+        auto Thrust_y_t_data = loadDataTable("../dataTables/golubka_V1/Thrusts/Thrust_y_t.txt");
+        auto Thrust_z_t_data = loadDataTable("../dataTables/golubka_V1/Thrusts/Thrust_z_t.txt");
+        auto mass_data = loadDataTable("../dataTables/golubka_V1/Mass_t.txt");
+        auto Ixx_data = loadDataTable("../dataTables/golubka_V1/Inertion/Ix_t.txt");
+        auto Iyy_data = loadDataTable("../dataTables/golubka_V1/Inertion/Iy_t.txt");
+        auto Izz_data = loadDataTable("../dataTables/golubka_V1/Inertion/Iz_t.txt");
 
-        // Загрузка данных с обработкой ошибок
-        auto loadDataTable = [](const std::string& filename) {
-            try {
-                auto loader = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>(filename);
-                return loader.loadFromFile();
-            } catch (const std::exception& e) {
-                std::cerr << "Error loading data table '" << filename << "': " << e.what() << std::endl;
-                throw;
-            }
-        };
-
-        auto Thrust_x_t_data = loadDataTable("dataTables/golubka_V1/Thrusts/Thrust_x_t.txt");
-        auto Thrust_y_t_data = loadDataTable("dataTables/golubka_V1/Thrusts/Thrust_y_t.txt");
-        auto Thrust_z_t_data = loadDataTable("dataTables/golubka_V1/Thrusts/Thrust_z_t.txt");
-
-        auto golubka_V1_init_params = std::make_unique<ObjInitParams<GLOBAL_CONFIG::PROJECT_TYPE>>();
-        auto golubka_V1_aero_input = std::make_unique<RocketAeroInput<GLOBAL_CONFIG::PROJECT_TYPE>>();
+        // === ШАГ 4: КРИТИЧЕСКИ ВАЖНО — СНАЧАЛА СОЗДАТЬ И ИНИЦИАЛИЗИРОВАТЬ МЕНЕДЖЕР ===
         resource_manager.golubka_V1_interp_mgr = std::make_shared<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
         resource_manager.golubka_V1_interp_mgr->setThrust(
             std::move(Thrust_x_t_data),
@@ -107,12 +87,70 @@ int main() {
             std::move(Thrust_z_t_data)
         );
 
-        auto paramsProvider = std::make_shared<DynamicParametersProviderForFullRocketModel<
-            GLOBAL_CONFIG::PROJECT_TYPE>>(resource_manager.golubka_V1_interp_mgr);
+        resource_manager.golubka_V1_interp_mgr->setMass(std::move(mass_data));
+        resource_manager.golubka_V1_interp_mgr->setInertia(
+            std::move(Ixx_data),
+            std::move(Iyy_data),
+            std::move(Izz_data)
+        );
 
-        auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(paramsProvider, resource_manager.world);
+        // === ШАГ 5: ТОЛЬКО ТЕПЕРЬ МОЖНО СОЗДАВАТЬ ПРОВАЙДЕР (менеджер уже существует!) ===
+        auto paramsProvider = std::make_shared<DynamicParametersProviderForFullRocketModel<GLOBAL_CONFIG::PROJECT_TYPE>>(
+            resource_manager.golubka_V1_interp_mgr  // ← shared_ptr живёт в resource_manager!
+        );
 
-        // Создание ракеты с безопасным управлением памятью
+        // === ШАГ 6: ЗАПОЛНЕНИЕ АЭРОДИНАМИЧЕСКИХ ПАРАМЕТРОВ ===
+        auto golubka_V1_aero_input = std::make_unique<RocketAeroInput<GLOBAL_CONFIG::PROJECT_TYPE>>();
+        golubka_V1_aero_input->rudder_count = 4;
+        golubka_V1_aero_input->D_mid = 0.07f;
+        golubka_V1_aero_input->L = 0.5f;
+        golubka_V1_aero_input->L_har = 0.45f;
+        golubka_V1_aero_input->Xdp = 0.4f;
+        golubka_V1_aero_input->Xdst = 0.45f;
+        golubka_V1_aero_input->L_sum_kr = 0.251f;
+        golubka_V1_aero_input->b_0_kr = 0.0355f;
+        golubka_V1_aero_input->b_1_kr = 0.0355f;
+        golubka_V1_aero_input->hi_st = 0.45f;
+        golubka_V1_aero_input->d_kr = 0.01f;
+        golubka_V1_aero_input->S_kr = 0.005f;
+        golubka_V1_aero_input->l2_kr = 0.251f;
+        golubka_V1_aero_input->X_p_kr_st = 0.45f;
+        golubka_V1_aero_input->L_sum_p = 0.1f;
+        golubka_V1_aero_input->b_0_p = 0.02f;
+        golubka_V1_aero_input->b_1_p = 0.02f;
+        golubka_V1_aero_input->hi_p = 0.45f;
+        golubka_V1_aero_input->d_p = 0.005f;
+        golubka_V1_aero_input->S_p = 0.002f;
+        golubka_V1_aero_input->l_2_p = 0.4f;
+        golubka_V1_aero_input->X_p_kr_p = 0.4f;
+        golubka_V1_aero_input->X_ov_p = 0.4f;
+        golubka_V1_aero_input->b_sah_p = 0.01f;
+
+        // === ШАГ 7: НАЧАЛЬНЫЕ УСЛОВИЯ (50 м/с под 15°, угловая скорость 5 град/с по тангажу) ===
+        auto golubka_V1_init_params = std::make_unique<ObjInitParams<GLOBAL_CONFIG::PROJECT_TYPE>>();
+        golubka_V1_init_params->position = Eigen::Vector3<GLOBAL_CONFIG::PROJECT_TYPE>(0.0f, 0.0f, 0.0f);
+        golubka_V1_init_params->velocity = Eigen::Vector3<GLOBAL_CONFIG::PROJECT_TYPE>(
+            50.0f * std::cos(15.0f * M_PI / 180.0f),  // 48.3 м/с по оси пусковой
+            0.0f,
+            50.0f * std::sin(15.0f * M_PI / 180.0f)   // 12.94 м/с вертикально
+        );
+        golubka_V1_init_params->eulerAngles = Eigen::Vector3<GLOBAL_CONFIG::PROJECT_TYPE>(
+            15.0f * M_PI / 180.0f,  // тангаж 15°
+            0.0f,                   // рыскание 0°
+            0.0f                    // крен 0°
+        );
+        golubka_V1_init_params->angularVelocity = Eigen::Vector3<GLOBAL_CONFIG::PROJECT_TYPE>(
+            0.0f,
+            5.0f * M_PI / 180.0f,  // 5 град/с по тангажу → 0.0873 рад/с
+            0.0f
+        );
+
+        // === ШАГ 8: СОЗДАНИЕ СИСТЕМЫ И РАКЕТЫ ===
+        auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(
+            paramsProvider,
+            resource_manager.world
+        );
+
         resource_manager.golubka_V1 = std::make_shared<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>>(
             std::move(golubka_V1_system),
             std::move(golubka_V1_init_params),
@@ -120,32 +158,38 @@ int main() {
             resource_manager.golubka_V1_interp_mgr
         );
 
-        auto solver = std::make_unique<RungeKutta4Solver<GLOBAL_CONFIG::PROJECT_TYPE, GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE>>();
+        // === ШАГ 9: КРИТИЧЕСКИ ВАЖНО — ПРАВИЛЬНЫЙ ТИП КОЛБЭКА ===
+        using CallbackType = GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>;
+        auto solver = std::make_unique<RungeKutta4Solver<GLOBAL_CONFIG::PROJECT_TYPE, CallbackType>>();
 
-        // Создание менеджера объектов
+        // === ШАГ 10: СОЗДАНИЕ МЕНЕДЖЕРА ОБЪЕКТОВ ===
         resource_manager.manager = std::make_shared<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
         auto golubka_V1_ID = resource_manager.manager->addTrackedObject(resource_manager.golubka_V1);
 
-        // Callback для проверки продолжения симуляции
+        // === ШАГ 11: КОЛБЭК С ПРОВЕРКОЙ ВЫСОТЫ ===
         auto continue_callback = [golubka_V1_ID](
-            const std::shared_ptr<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>& object_manager
+            const std::shared_ptr<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>& object_manager
         ) -> bool {
-            return isMainRocketActive(object_manager, golubka_V1_ID);
+            const auto obj = object_manager->getObjectByID(golubka_V1_ID);
+            if (!obj || !obj->isActive()) return false;
+            const auto& state = obj->getStateSnapshot();
+            return state.getPosition().z() >= 0.0f;  // Остановка при ударе о землю
         };
 
-        IModel<GLOBAL_CONFIG::PROJECT_TYPE, GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE> model(
+        // === ШАГ 12: ЗАПУСК СИМУЛЯЦИИ ===
+        IModel<GLOBAL_CONFIG::PROJECT_TYPE, CallbackType> model(
             std::move(solver),
             resource_manager.world,
             std::move(resource_manager.csvDataSaver),
             std::move(resource_manager.describer),
             resource_manager.manager,
             std::move(continue_callback),
-            0.01
+            0.01f
         );
 
         model.run();
 
-        // Явное сохранение перед выходом
+        // === ШАГ 13: ЯВНОЕ СОХРАНЕНИЕ ===
         if (resource_manager.csvDataSaver) {
             resource_manager.csvDataSaver->save();
         }
@@ -160,7 +204,3 @@ int main() {
     }
     return 0;
 }
-// TIP See CLion help at <a
-// href="https://www.jetbrains.com/help/clion/">jetbrains.com/help/clion/</a>.
-//  Also, you can try interactive lessons for CLion by selecting
-//  'Help | Learn IDE Features' from the main menu.

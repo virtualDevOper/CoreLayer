@@ -10,9 +10,9 @@ template <typename metricType>
 class AtmosphericModel final : public IAtmosphericModel<metricType> {
 public:
     AtmosphericModel() = default;
-    metricType getDensity(const Eigen::Vector3<metricType> r) const override;
-    metricType getPressure(const Eigen::Vector3<metricType> r) const override;
-    metricType getTemperature(const Eigen::Vector3<metricType> r) const override;
-    metricType getSpeedOfSound(const Eigen::Vector3<metricType> r) const override;
+    metricType getDensity(Eigen::Vector3<metricType> r) const override;
+    metricType getPressure(Eigen::Vector3<metricType> r) const override;
+    metricType getTemperature(Eigen::Vector3<metricType> r) const override;
+    metricType getSpeedOfSound(Eigen::Vector3<metricType> r) const override;
 };
 #include "AtmosphericModel.tpp"

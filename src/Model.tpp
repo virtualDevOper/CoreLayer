@@ -9,7 +9,7 @@ IModel<metricType, CallbackType>::IModel(
     std::shared_ptr<AbstractWorldModel<metricType>> world,
     std::unique_ptr<SimulationMomento<metricType>> dataSaver,
     std::unique_ptr<SimulationDescriber> describer,
-    std::shared_ptr<ObjectManager<metricType>> manager,
+    std::shared_ptr<IObjectManager<metricType>> manager,
     CallbackType continue_callback,
     metricType dt)
 

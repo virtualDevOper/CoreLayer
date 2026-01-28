@@ -5,7 +5,7 @@
 #include "../../src/WorldModel/AbstractWorldModel.h"
 #include "../../src/OdeSolver/ODESolver.h"
 #include "../../src/SimulationMomento/SimulationMomento.h"
-#include "../../src/PhysicalObjects/ObjectManager.h"
+#include "../../src/utils/ObjManager/IObjectManager.h"
 
 /**
  * \brief Класс модели симуляции, управляющий решателем ОДУ, миром и объектами
@@ -26,7 +26,7 @@ public:
         std::shared_ptr<AbstractWorldModel<metricType>> world,
         std::unique_ptr<SimulationMomento<metricType>> dataSaver,
         std::unique_ptr<SimulationDescriber> describer,
-        std::shared_ptr<ObjectManager<metricType>> manager,
+        std::shared_ptr<IObjectManager<metricType>> manager,
         CallbackType continue_callback,
         metricType dt);
 
@@ -42,7 +42,7 @@ private:
     std::shared_ptr<AbstractWorldModel<metricType>> worldModel_;
     std::unique_ptr<SimulationMomento<metricType>> simulationData_;
     std::unique_ptr<SimulationDescriber> simulationDescriber_;
-    std::shared_ptr<ObjectManager<metricType>> obj_manager_;
+    std::shared_ptr<IObjectManager<metricType>> obj_manager_;
     CallbackType continue_callback_;
     metricType dt_;
 };

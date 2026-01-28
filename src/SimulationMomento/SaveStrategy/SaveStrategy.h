@@ -1,20 +1,16 @@
 //
 // Created by 4NR_Operator_3 on 06.10.2025.
 //
-
 #pragma once
 #include <utility>
-
 #include "../StateStorage.h"
 #include "../../../PCH.h"
-
 template <typename metricType>
 class SaveStrategy {
 public:
     virtual ~SaveStrategy() = default;
     virtual void save(const std::vector<StateStorage<metricType>>& data) = 0;
 };
-
 template <typename metricType>
 class CsvSaveStrategy final : public SaveStrategy<metricType> {
 public:
@@ -36,6 +32,7 @@ public:
             file.close();
             throw std::runtime_error(std::string("CSV write error: ") + e.what());
         }
+
         file.close();
     }
 
@@ -56,7 +53,6 @@ private:
 
     void writeCsvHeader(std::ofstream& file, const std::set<std::string>& paramNames) {
         file << "object_id,snapshot_index";
-
         // Добавляем названия параметров в заголовок
         for (const auto& paramName : paramNames) {
             file << "," << escapeCsvField(paramName);
@@ -66,13 +62,11 @@ private:
 
     // Записывает данные в CSV формате
     void writeCsvData(std::ofstream& file,
-                     const std::vector<StateStorage<metricType>>& data,
-                     const std::set<std::string>& paramNames) {
-
+                      const std::vector<StateStorage<metricType>>& data,
+                      const std::set<std::string>& paramNames) {
         for (const auto& storage : data) {
             int objectId = storage.getId();
             const auto& states = storage.getStates();
-
             for (size_t snapshotIndex = 0; snapshotIndex < states.size(); ++snapshotIndex) {
                 const auto& snapshot = states[snapshotIndex];
                 const auto& params = snapshot.getParams();
@@ -83,14 +77,16 @@ private:
                 // Значения параметров в том же порядке, что и в заголовке
                 for (const auto& paramName : paramNames) {
                     file << ",";
-
                     auto it = params.find(paramName);
                     if (it != params.end()) {
-                        file << it->second; // Значение параметра
+                        metricType value = it->second;
+                        // Пропускаем NaN значения (оставляем пустую ячейку)
+                        if (!std::isnan(value)) {
+                            file << value;
+                        }
                     }
-                    // Если параметра нет - оставляем пустую ячейку
+                    // Если параметра нет или он имеет NaN - оставляем пустую ячейку
                 }
-
                 file << "\n";
             }
         }
@@ -102,7 +98,6 @@ private:
         if (field.find(',') != std::string::npos ||
             field.find('"') != std::string::npos ||
             field.find('\n') != std::string::npos) {
-
             std::string escaped = "\"";
             for (char c : field) {
                 if (c == '"') {

@@ -2,11 +2,6 @@
 // Created by 4NR_Operator_3 on 25.12.2025.
 //
 
-//
-// Created by 4NR_Operator_3 on 25.12.2025
-// Template version of coordinate transformations
-// REFACTORED: Smart pointers everywhere
-//
 
 #pragma once
 #include "../../../PCH.h"
@@ -28,7 +23,7 @@ public:
 protected:
     ConeDirectionInterface(metricType theta, metricType psi, metricType gamma,
                           const std::array<metricType, 3>& vector_param)
-        : theta(theta), gamma(gamma), psi(psi) {}
+        : theta(theta), psi(psi), gamma(gamma) {}
 
     virtual std::array<std::array<metricType, 3>, 3> rotation_matrix() = 0;
 
@@ -50,7 +45,7 @@ public:
                            const std::array<metricType, 3>& vector_param)
         : ConeDirectionInterface<metricType>(theta, psi, gamma, vector_param) {
 
-        auto L = this->rotation_matrix();
+        auto L = this->Svyaz_to_zemn_Direction<metricType>::rotation_matrix();
 
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++) {
@@ -59,7 +54,7 @@ public:
         }
     }
 
-    virtual ~Svyaz_to_zemn_Direction() = default;
+    ~Svyaz_to_zemn_Direction() override = default;
 
 private:
     std::array<std::array<metricType, 3>, 3> rotation_matrix() override {
@@ -102,7 +97,7 @@ public:
                            const std::array<metricType, 3>& vector_param)
         : ConeDirectionInterface<metricType>(theta, psi, gamma, vector_param) {
 
-        auto L = this->rotation_matrix();
+        auto L = this->Zemn_to_svyaz_Direction<metricType>::rotation_matrix();
 
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++) {
@@ -111,7 +106,7 @@ public:
         }
     }
 
-    virtual ~Zemn_to_svyaz_Direction() = default;
+    ~Zemn_to_svyaz_Direction() override = default;
 
 private:
     std::array<std::array<metricType, 3>, 3> rotation_matrix() override {
