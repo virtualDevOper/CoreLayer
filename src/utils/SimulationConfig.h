@@ -16,15 +16,15 @@ struct SimulationConfigRocketInit {
 };
 
 struct SimulationConfig {
-    std::string operator_name{"undefined"};
-    std::string ode_solver{"undefined"};
-    std::string world_config{"undefined"};
-    std::string data_saver{"undefined"};
-    std::string earth_type{"undefined"};
+    std::string operator_name;
+    std::string ode_solver;
+    std::string world_config;
+    std::string data_saver;
+    std::string earth_type;
 
-    float time_step{0.01f};
-    float max_time{2.0f};
-    std::string output_csv{"../results_data/simulation_data.csv"};
+    float time_step;  // Разумное значение по умолчанию
+    float max_time;    // Минимальное разумное значение
+    std::string output_csv;
 
     // Пути к табличным данным
     std::string thrust_x_path;

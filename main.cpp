@@ -37,32 +37,8 @@ auto loadDataTable = [](const std::string& filename) {
 
 int main() {
     try {
-        // === ЗАГРУЗКА КОНФИГУРАЦИИ СИМУЛЯЦИИ ИЗ JSON ===
-        // Попробуем несколько путей к конфигу
-        std::vector<std::string> config_paths = {
-            "config/simulation.json",           // Из корня проекта
-            "../config/simulation.json",       // Из build директории
-            "../../config/simulation_build.json"     // Из Release/Debug поддиректории
-        };
-        
-        SimulationConfig config;
-        bool config_loaded = false;
-        
-        for (const auto& path : config_paths) {
-            try {
-                config = SimulationConfig::loadFromJsonFile(path);
-                config_loaded = true;
-                std::cout << "Config loaded from: " << path << std::endl;
-                break;
-            } catch (const std::exception&) {
-                // Попробуем следующий путь
-                continue;
-            }
-        }
-        
-        if (!config_loaded) {
-            throw std::runtime_error("Cannot find simulation config file in any of the expected locations");
-        }
+        // === ШАГ 0: ЗАГРУЗКА КОНФИГУРАЦИИ ===
+        auto config = SimulationConfig::loadFromJsonFile("../config/simulation.json");
 
         struct ResourceManager {
             std::shared_ptr<SimpleWorld<GLOBAL_CONFIG::PROJECT_TYPE>> world;

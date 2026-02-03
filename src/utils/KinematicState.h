@@ -58,4 +58,4 @@ private:
 
 // Глобальный оператор скаляр * состояние (для симметрии)
 template<typename metricType>
-inline KinematicState<metricType> operator*(metricType scalar, const KinematicState<metricType>& state);
+KinematicState<metricType> operator*(metricType scalar, const KinematicState<metricType>& state);

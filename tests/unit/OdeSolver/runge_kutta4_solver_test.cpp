@@ -43,7 +43,7 @@ TEST_CASE("RungeKutta4Solver базовая функциональность", "
         
         // Создаем мок менеджера объектов
         auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object);
+        object_manager->addObject(0, object);
         
         // Создаем начальное состояние
         auto initial_state = KinematicState<metricType>::createBuilder()
@@ -75,7 +75,7 @@ TEST_CASE("RungeKutta4Solver базовая функциональность", "
         ));
         
         // Проверяем результат
-        const auto& final_states = momento.getStateStorageByID(1).getStates();
+        const auto& final_states = momento.getStateStorageByID(0).getStates();
         REQUIRE(final_states.size() > 1);  // Должно быть больше одного состояния
         
         const auto& final_state = final_states.back();
@@ -181,14 +181,20 @@ TEST_CASE("RungeKutta4Solver множественные объекты", "[solve
             }
         );
         
-        // Создаем объекты
-        auto object1 = std::make_shared<MockObject<metricType>>(dynamics1);
-        auto object2 = std::make_shared<MockObject<metricType>>(dynamics2);
+        // Создаем объекты с разными начальными условиями
+        auto object1 = std::make_shared<MockObject<metricType>>(
+            dynamics1, 
+            Eigen::Vector3<metricType>(metricType(1.0), metricType(0.0), metricType(0.0))
+        );
+        auto object2 = std::make_shared<MockObject<metricType>>(
+            dynamics2,
+            Eigen::Vector3<metricType>(metricType(2.0), metricType(0.0), metricType(0.0))
+        );
         
         // Создаем менеджер объектов
         auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object1);
-        object_manager->addObject(2, object2);
+        object_manager->addObject(0, object1);
+        object_manager->addObject(1, object2);
         
         // Создаем SimulationMomento
         SimulationMomento<metricType> momento;
@@ -215,8 +221,8 @@ TEST_CASE("RungeKutta4Solver множественные объекты", "[solve
         ));
         
         // Проверяем результаты для обоих объектов
-        const auto& states1 = momento.getStateStorageByID(1).getStates();
-        const auto& states2 = momento.getStateStorageByID(2).getStates();
+        const auto& states1 = momento.getStateStorageByID(0).getStates();
+        const auto& states2 = momento.getStateStorageByID(1).getStates();
         
         REQUIRE(states1.size() > 1);
         REQUIRE(states2.size() > 1);
@@ -260,7 +266,7 @@ TEST_CASE("RungeKutta4Solver неактивные объекты", "[solver][rk4
         );
         
         auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object);
+        object_manager->addObject(0, object);
         
         SimulationMomento<metricType> momento;
         
@@ -284,7 +290,7 @@ TEST_CASE("RungeKutta4Solver неактивные объекты", "[solver][rk4
         ));
         
         // Проверяем, что состояние не изменилось
-        const auto& states = momento.getStateStorageByID(1).getStates();
+        const auto& states = momento.getStateStorageByID(0).getStates();
         REQUIRE(states.size() > 1);  // Должны быть добавлены копии состояния
         
         // Все состояния должны быть одинаковыми (объект неактивен)

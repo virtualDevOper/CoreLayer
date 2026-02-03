@@ -27,26 +27,26 @@ SimulationConfig SimulationConfig::loadFromJsonFile(const std::string& path) {
     SimulationConfig cfg;
     const auto json = readFileToString(path);
 
+    // Новые строки для описания
+    cfg.operator_name = extractString(json, "operator_name", "");
+    cfg.ode_solver = extractString(json, "ode_solver", "");
+    cfg.world_config = extractString(json, "world_config", "");
+    cfg.data_saver = extractString(json, "data_saver", "");
+    cfg.earth_type = extractString(json, "earth_type", "");
+
+    // Пути к таблицам
+    cfg.thrust_x_path = extractString(json, "thrust_x", "");
+    cfg.thrust_y_path = extractString(json, "thrust_y", "");
+    cfg.thrust_z_path = extractString(json, "thrust_z", "");
+    cfg.mass_path = extractString(json, "mass", "");
+    cfg.Ixx_path = extractString(json, "Ixx", "");
+    cfg.Iyy_path = extractString(json, "Iyy", "");
+    cfg.Izz_path = extractString(json, "Izz", "");
+
     // Глобальные параметры симуляции
     cfg.time_step = extractFloat(json, "time_step", cfg.time_step);
     cfg.max_time = extractFloat(json, "max_time", cfg.max_time);
-    cfg.output_csv = extractString(json, "output_csv", cfg.output_csv);
-
-    // Новые строки для описания
-    cfg.operator_name = extractString(json, "operator_name", cfg.operator_name);
-    cfg.ode_solver = extractString(json, "ode_solver", cfg.ode_solver);
-    cfg.world_config = extractString(json, "world_config", cfg.world_config);
-    cfg.data_saver = extractString(json, "data_saver", cfg.data_saver);
-    cfg.earth_type = extractString(json, "earth_type", cfg.earth_type);
-
-    // Пути к таблицам
-    cfg.thrust_x_path = extractString(json, "thrust_x", cfg.thrust_x_path);
-    cfg.thrust_y_path = extractString(json, "thrust_y", cfg.thrust_y_path);
-    cfg.thrust_z_path = extractString(json, "thrust_z", cfg.thrust_z_path);
-    cfg.mass_path = extractString(json, "mass", cfg.mass_path);
-    cfg.Ixx_path = extractString(json, "Ixx", cfg.Ixx_path);
-    cfg.Iyy_path = extractString(json, "Iyy", cfg.Iyy_path);
-    cfg.Izz_path = extractString(json, "Izz", cfg.Izz_path);
+    cfg.output_csv = extractString(json, "output_csv", "");
 
     // Начальные условия
     cfg.rocket_init.position = extractVec3(json, "position", cfg.rocket_init.position);
