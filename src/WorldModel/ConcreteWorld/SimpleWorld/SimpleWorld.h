@@ -3,7 +3,7 @@
 //
 
 #pragma once
-#include "../../../../PCH.h"
+#include "PCH.h"
 #include "../../AbstractWorldModel.h"
 
 template <typename metricType>
@@ -27,12 +27,12 @@ public:
     void setCoriolisEffect(std::unique_ptr<ICoriolisModel<metricType>> coriolisModel) override;
     void setTerrain(std::unique_ptr<ITerrainModel<metricType>> terrainModel) override;
 
-    // Getters
-    IWindModel<metricType>* getWindModel() const override;
-    IAtmosphericModel<metricType>* getAtmosphericModel() const override;
-    IGravitationalModel<metricType>* getGravityModel() const override;
-    ICoriolisModel<metricType>* getCoriolisModel() const override;
-    ITerrainModel<metricType>* getTerrainModel() const override;
+    // Getters - возвращают const указатели для предотвращения модификации
+    const IWindModel<metricType>* getWindModel() const override;
+    const IAtmosphericModel<metricType>* getAtmosphericModel() const override;
+    const IGravitationalModel<metricType>* getGravityModel() const override;
+    const ICoriolisModel<metricType>* getCoriolisModel() const override;
+    const ITerrainModel<metricType>* getTerrainModel() const override;
 
     // Checking methods
     bool hasWindModel() const override;
@@ -48,5 +48,3 @@ private:
     std::unique_ptr<ICoriolisModel<metricType>> coriolisModel_;
     std::unique_ptr<ITerrainModel<metricType>> terrainModel_;
 };
-
-#include "SimpleWorld.tpp"

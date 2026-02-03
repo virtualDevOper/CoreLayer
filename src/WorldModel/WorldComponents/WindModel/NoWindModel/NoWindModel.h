@@ -3,9 +3,8 @@
 //
 
 #pragma once
-#include "../../../../../PCH.h"
+#include "PCH.h"
 #include "../IWindModel.h"
-
 
 template <typename metricType>
 class NoWindModel final : public IWindModel<metricType> {
@@ -17,5 +16,4 @@ public:
     // Возвращает нулевое направление (азимут и угол возвышения)
     std::pair<metricType, metricType> getWindDirection(Eigen::Vector3<metricType> r, metricType t) const override;
 };
-#include "NoWindModel.tpp"
 

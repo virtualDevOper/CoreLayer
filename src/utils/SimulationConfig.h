@@ -1,5 +1,5 @@
 #pragma once
-#include "../../PCH.h"
+#include "PCH.h"
 
 /**
  * \brief Минимальная JSON-конфигурация запуска симуляции.

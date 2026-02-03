@@ -5,7 +5,7 @@
 #pragma once
 #include <utility>
 
-#include "../../../../PCH.h"
+#include "PCH.h"
 #include "../IDataUploader.h"
 #include "../../Interpolation/ILinearInterpolator/LinearInterpolator/LinearInterpolator.h"
 

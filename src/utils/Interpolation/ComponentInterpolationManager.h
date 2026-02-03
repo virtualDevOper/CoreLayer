@@ -3,7 +3,8 @@
 //
 
 #pragma once
-#include "../../../PCH.h"
+#include "PCH.h"
+#include "../IParameterProvider.h"
 #include "ILinearInterpolator/ILinearInterpolator.h"
 #include "IBilinearInterpolator/IBilinearInterpolator.h"
 
@@ -18,7 +19,7 @@
  */
 
 template<typename metricType>
-class ComponentInterpolationManager {
+class ComponentInterpolationManager : public IParameterProvider<metricType> {
 private:
     // === МАССА И ИНЕРЦИЯ ===
     std::unique_ptr<ILinearInterpolator<metricType>> mass_;
@@ -93,13 +94,13 @@ public:
     }
 
     // ============ ГЕТТЕРЫ С ПРОВЕРКАМИ ============
-
-    metricType getMass(metricType t) const {
+    // Реализация интерфейса IParameterProvider
+    [[nodiscard]] metricType getMass(metricType t) const override {
         if (!mass_) throw std::runtime_error("Интерполятор массы не установлен");
         return mass_->interpolate(t);
     }
 
-    Eigen::Vector3<metricType> getInertia(metricType t) const {
+    [[nodiscard]] Eigen::Vector3<metricType> getInertia(metricType t) const override {
         if (!inertia_x_ || !inertia_y_ || !inertia_z_)
             throw std::runtime_error("Интерполяторы моментов инерции не установлены");
         return Eigen::Vector3<metricType>(
@@ -109,7 +110,7 @@ public:
         );
     }
 
-    Eigen::Vector3<metricType> getThrust(metricType t) const {
+    [[nodiscard]] Eigen::Vector3<metricType> getThrust(metricType t) const override {
         if (!thrust_x_ || !thrust_y_ || !thrust_z_)
             throw std::runtime_error("Интерполяторы тяги не установлены");
         return Eigen::Vector3<metricType>(

@@ -3,7 +3,7 @@
 //
 
 #pragma once
-#include "../../../../../PCH.h"
+#include "PCH.h"
 #include "../IAtmosphericModel.h"
 
 template <typename metricType>
@@ -15,4 +15,3 @@ public:
     metricType getTemperature(Eigen::Vector3<metricType> r) const override;
     metricType getSpeedOfSound(Eigen::Vector3<metricType> r) const override;
 };
-#include "AtmosphericModel.tpp"

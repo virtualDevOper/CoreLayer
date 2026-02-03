@@ -3,9 +3,9 @@
 //
 
 #pragma once
-#include "../../PCH.h"
+#include "PCH.h"
 #include "../utils/ObjManager/IObjectManager.h"
-#include "../../GLOBAL_CONFIG.h"
+#include "GLOBAL_CONFIG.h"
 
 
 inline bool isMainRocketActive(const std::shared_ptr<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>> &object_manager, const int mainRocID) {

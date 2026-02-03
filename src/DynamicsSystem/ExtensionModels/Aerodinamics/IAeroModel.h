@@ -3,7 +3,7 @@
 //
 
 #pragma once
-#include "../../../../PCH.h"
+#include "PCH.h"
 
 /**
 * \brief Абстрактный интерфейс аэродинамической модели

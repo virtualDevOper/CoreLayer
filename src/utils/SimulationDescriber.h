@@ -3,7 +3,7 @@
 
 
 #pragma once
-#include "../../PCH.h"
+#include "PCH.h"
 
 
 struct SimulationDescriber {
@@ -16,16 +16,13 @@ struct SimulationDescriber {
     std::string earth_type{"undefined"};
     std::vector<std::string> simulation_objects{};
 
-    explicit SimulationDescriber(int utc_offset) {
-        utc_offset_ = utc_offset;
-        start_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now() + std::chrono::hours(utc_offset));
-    }
+    explicit SimulationDescriber(int utc_offset);
 
     // Методы для установки значений извне
-    void setOperatorName(const std::string& name) { operator_name = name; }
-    void setOdeSolver(const std::string& solver) { ode_solver = solver; }
-    void setWorldConfig(const std::string& config) { world_config = config; }
-    void setDataSaver(const std::string& saver) { data_saver = saver; }
-    void setEarthType(const std::string& type) { earth_type = type; }
-    void setSimulationObjects(const std::vector<std::string>& objects) { simulation_objects = objects; }
+    void setOperatorName(const std::string& name);
+    void setOdeSolver(const std::string& solver);
+    void setWorldConfig(const std::string& config);
+    void setDataSaver(const std::string& saver);
+    void setEarthType(const std::string& type);
+    void setSimulationObjects(const std::vector<int>& ids);
 };

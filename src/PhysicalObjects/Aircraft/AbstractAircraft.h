@@ -4,6 +4,7 @@
 
 #pragma once
 #include "../AbstractObject.h"
+#include "../../utils/IParameterProvider.h"
 
 /**
  * \brief Абстрактный класс летательного аппарата с аэродинамическими параметрами.
@@ -12,7 +13,7 @@
  * \tparam AeroInput  Тип структуры, описывающей аэродинамический вход (геометрия, рулевые поверхности и т.п.).
  *
  * \details Расширяет AbstractObject хранилищем аэродинамического ввода и
- * менеджером интерполяции параметров (масса, инерция, тяга и др.).
+ * слабой ссылкой на провайдер параметров (для разрыва циклических зависимостей).
  * Конкретные ЛА (ракеты, снаряды, БПЛА) наследуются от этого класса.
  */
 template <typename metricType, typename AeroInput>
@@ -22,21 +23,31 @@ public:
         std::unique_ptr<IDynamicsSystem<metricType>> sys,
         std::unique_ptr<ObjInitParams<metricType>> initial_params,
         std::unique_ptr<AeroInput> aero_input,
-        std::shared_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr)
+        std::weak_ptr<IParameterProvider<metricType>> param_provider)  // Изменено: weak_ptr для наблюдения
         : AbstractObject<metricType>(std::move(sys), std::move(initial_params)),
           aero_input_(std::move(aero_input)),
-          comp_interp_mgr_(comp_interp_mgr)
+          param_provider_(param_provider)
     {
         if (!aero_input_) {
             throw std::invalid_argument("AeroInput cannot be null");
         }
 
-        if (!comp_interp_mgr_) {
-            throw std::invalid_argument("ComponentInterpolationManager cannot be null");
+        // Проверяем, что провайдер параметров доступен
+        if (param_provider_.expired()) {
+            throw std::invalid_argument("ParameterProvider is not available");
         }
     }
 
 protected:
     std::unique_ptr<AeroInput> aero_input_;
-    std::shared_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr_;
+    std::weak_ptr<IParameterProvider<metricType>> param_provider_;  // Наблюдаем, не владеем
+
+    // Защищенный метод для получения провайдера параметров
+    [[nodiscard]] std::shared_ptr<IParameterProvider<metricType>> getParameterProvider() const {
+        auto provider = param_provider_.lock();
+        if (!provider) {
+            throw std::runtime_error("ParameterProvider is no longer available");
+        }
+        return provider;
+    }
 };

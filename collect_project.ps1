@@ -1,113 +1,160 @@
-# collect_project.ps1
-# Сборка всех файлов проекта с поддержкой кириллицы (Windows-1251)
+# PowerShell скрипт для сборки всех файлов проекта
+# Улучшенная версия с поддержкой UTF-8
 
 param(
-    [string]$RootDir = (Get-Location).Path,
-    [string]$OutputFile = (Join-Path $RootDir "project_all_files.txt")
+    [string]$OutputFile = "project_all_files.txt",
+    [switch]$IncludeLibs = $false
 )
 
-$extensions = @('.cpp', '.h', '.tpp', '.txt', '.md')
-$excludeDirs = @('build', 'bin', 'obj', 'Debug', 'Release', '.git', '.vs', 'CMakeFiles', 'cmake-build-debug', 'libs')
-$excludeFiles = @('CMakeCache.txt')
+Write-Host "Сборка всех файлов проекта CoreLayer..." -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
 
-$timestamp = Get-Date -Format "dd.MM.yyyy HH:mm:ss,fff"
+# Удаляем старый файл
+if (Test-Path $OutputFile) {
+    Remove-Item $OutputFile -Force
+}
 
-# Создаём кодировку UTF-8 с BOM для корректного сохранения кириллицы
-$utf8WithBom = New-Object System.Text.UTF8Encoding($true)
-
+# Создаем заголовок
 $header = @"
-=== Сборка всех файлов проекта CoreLayer === 
-Дата: $timestamp 
-Корневая директория проекта: $RootDir\ 
-
+# CoreLayer - Полный код проекта
+# Сгенерировано: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+# ==========================================
 
 "@
 
-# Записываем заголовок с BOM
-[System.IO.File]::WriteAllText($OutputFile, $header, $utf8WithBom)
+$header | Out-File -FilePath $OutputFile -Encoding UTF8
 
-$foundCount = 0
-$notFoundCount = 0
-
-# Функция проверки исключений
-function Test-Excluded {
-    param([string]$Path, [string]$Root)
+# Функция для добавления файла
+function Add-FileToOutput {
+    param(
+        [string]$FilePath,
+        [string]$OutputFile
+    )
     
-    $relative = $Path.Substring($Root.Length + 1).Replace('\', '/').ToLower()
-    
-    foreach ($dir in $excludeDirs) {
-        if ($relative -like "$dir/*" -or $relative -eq $dir -or $relative -like "*/$dir/*") {
-            return $true
-        }
+    if (-not (Test-Path $FilePath)) {
+        return
     }
     
-    foreach ($file in $excludeFiles) {
-        if ($relative -like $file.ToLower()) {
-            return $true
-        }
-    }
+    Write-Host "Добавляю: $FilePath" -ForegroundColor Yellow
     
-    return $false
+    $relativePath = $FilePath -replace [regex]::Escape((Get-Location).Path + "\"), ""
+    
+    $content = @"
+
+### Файл: $relativePath
+``````cpp
+$(Get-Content $FilePath -Raw -Encoding UTF8)
+``````
+
+"@
+    
+    $content | Out-File -FilePath $OutputFile -Append -Encoding UTF8
 }
 
-# Получаем все файлы
-Get-ChildItem -Path $RootDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
-    $ext = $_.Extension.ToLower()
-    $matchExt = $extensions -contains $ext
-    
-    if (-not $matchExt) { return $false }
-    
-    if (Test-Excluded -Path $_.FullName -Root $RootDir) {
-        return $false
-    }
-    
-    return $true
-} | Sort-Object FullName | ForEach-Object {
-    $file = $_
-    $relativePath = $file.FullName.Substring($RootDir.Length + 1)
-    
-    try {
-        # Читаем файл в кодировке Windows-1251 (стандарт для русских проектов в VS)
-        $win1251 = [System.Text.Encoding]::GetEncoding(1251)
-        $content = [System.IO.File]::ReadAllText($file.FullName, $win1251)
-        
-        $separator = @"
-============================================= 
-ФАЙЛ: $relativePath 
-============================================= 
+# Основные файлы
+Write-Host "`nДобавляю основные файлы..." -ForegroundColor Cyan
+Add-FileToOutput "main.cpp" $OutputFile
+Add-FileToOutput "CMakeLists.txt" $OutputFile
+Add-FileToOutput "README.md" $OutputFile
 
-"@
-        [System.IO.File]::AppendAllText($OutputFile, $separator, $utf8WithBom)
-        [System.IO.File]::AppendAllText($OutputFile, $content, $utf8WithBom)
-        
-        $footer = @"
+# Заголовочные файлы ядра
+Write-Host "`nДобавляю заголовочные файлы ядра..." -ForegroundColor Cyan
+"`n## Основные заголовочные файлы`n" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
 
-=== КОНЕЦ ФАЙЛА: $relativePath === 
+Get-ChildItem "include/core" -Filter "*.h" -ErrorAction SilentlyContinue | ForEach-Object {
+    Add-FileToOutput $_.FullName $OutputFile
+}
+Get-ChildItem "include/core" -Filter "*.hpp" -ErrorAction SilentlyContinue | ForEach-Object {
+    Add-FileToOutput $_.FullName $OutputFile
+}
+Get-ChildItem "include/core" -Filter "*.tpp" -ErrorAction SilentlyContinue | ForEach-Object {
+    Add-FileToOutput $_.FullName $OutputFile
+}
 
+# Исходный код
+Write-Host "`nДобавляю исходный код..." -ForegroundColor Cyan
+"`n## Исходный код`n" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
 
-"@
-        [System.IO.File]::AppendAllText($OutputFile, $footer, $utf8WithBom)
-        
-        $foundCount++
-    }
-    catch {
-        $notFoundCount++
-        Write-Warning "Не удалось прочитать: $relativePath"
+$sourceExtensions = @("*.h", "*.hpp", "*.cpp", "*.tpp")
+foreach ($ext in $sourceExtensions) {
+    Get-ChildItem "src" -Filter $ext -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+        Add-FileToOutput $_.FullName $OutputFile
     }
 }
 
-$summary = @"
-============================================= 
-=== СБОРКА ЗАВЕРШЕНА === 
-Файлов найдено: $foundCount 
-Файлов не найдено: $notFoundCount 
-Корневая директория: $RootDir\ 
-Итоговый файл: $OutputFile 
-============================================= 
-"@
+# Тесты
+Write-Host "`nДобавляю тесты..." -ForegroundColor Cyan
+"`n## Тесты`n" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
 
-[System.IO.File]::AppendAllText($OutputFile, $summary, $utf8WithBom)
+foreach ($ext in $sourceExtensions) {
+    Get-ChildItem "tests" -Filter $ext -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+        Add-FileToOutput $_.FullName $OutputFile
+    }
+}
 
-Write-Host "`n✅ Сборка завершена!" -ForegroundColor Green
-Write-Host "📁 Найдено файлов: $foundCount" -ForegroundColor Cyan
-Write-Host "📄 Результат: $OutputFile`n" -ForegroundColor Yellow
+# Конфигурационные файлы
+Write-Host "`nДобавляю конфигурацию..." -ForegroundColor Cyan
+"`n## Конфигурация`n" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
+
+$configExtensions = @("*.json", "*.xml", "*.cfg", "*.ini")
+foreach ($ext in $configExtensions) {
+    Get-ChildItem "config" -Filter $ext -ErrorAction SilentlyContinue | ForEach-Object {
+        Add-FileToOutput $_.FullName $OutputFile
+    }
+}
+
+# Скрипты визуализации
+Write-Host "`nДобавляю скрипты визуализации..." -ForegroundColor Cyan
+"`n## Скрипты визуализации`n" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
+
+$scriptExtensions = @("*.py", "*.bat", "*.sh")
+foreach ($ext in $scriptExtensions) {
+    Get-ChildItem "visualization" -Filter $ext -ErrorAction SilentlyContinue | ForEach-Object {
+        Add-FileToOutput $_.FullName $OutputFile
+    }
+}
+
+# Документация
+Write-Host "`nДобавляю документацию..." -ForegroundColor Cyan
+"`n## Документация`n" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
+
+Get-ChildItem "." -Filter "*.md" -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.Name -ne "README.md") {  # README уже добавлен
+        Add-FileToOutput $_.FullName $OutputFile
+    }
+}
+
+Get-ChildItem "docs" -Filter "*.md" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+    Add-FileToOutput $_.FullName $OutputFile
+}
+
+# Библиотеки (опционально)
+if ($IncludeLibs) {
+    Write-Host "`nДобавляю библиотеки..." -ForegroundColor Cyan
+    "`n## Библиотеки`n" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
+    
+    foreach ($ext in $sourceExtensions) {
+        Get-ChildItem "libs" -Filter $ext -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object {
+            Add-FileToOutput $_.FullName $OutputFile
+        }
+    }
+}
+
+# Статистика
+$fileSize = (Get-Item $OutputFile).Length
+$fileSizeKB = [math]::Round($fileSize / 1024, 2)
+$fileSizeMB = [math]::Round($fileSize / 1024 / 1024, 2)
+
+Write-Host "`n========================================" -ForegroundColor Green
+Write-Host "Готово! Все файлы собраны в: $OutputFile" -ForegroundColor Green
+Write-Host "Размер файла: $fileSize байт ($fileSizeKB KB / $fileSizeMB MB)" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
+
+# Показать содержимое папок
+Write-Host "`nСтатистика по папкам:" -ForegroundColor Cyan
+@("src", "include", "tests", "config", "visualization") | ForEach-Object {
+    if (Test-Path $_) {
+        $count = (Get-ChildItem $_ -Recurse -File | Measure-Object).Count
+        Write-Host "  $_/: $count файлов" -ForegroundColor White
+    }
+}

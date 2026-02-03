@@ -1,16 +1,16 @@
 #pragma once
-#include "../../PCH.h"
+#include "PCH.h"
 
 /**
- * \brief Иммутабельное состояние кинематических переменных для численного интегрирования
+ * \brief Иммутабельное кинематическое состояние объекта для численного интегрирования.
  * 
- * Содержит ТОЛЬКО переменные, участвующие в РК4:
- * - Позиция (3 компоненты)
- * - Скорость (3 компоненты)
- * - Углы Эйлера (3 компоненты)
- * - Угловая скорость (3 компоненты)
+ * \tparam metricType Тип данных для метрических величин.
  * 
- * Параметры (масса, инерция, силы) НЕ входят — они интерполируются напрямую через augmentSnapshot()
+ * \details Содержит только переменные, участвующие в методе Рунге-Кутта 4-го порядка:
+ * позицию, скорость, углы Эйлера и угловую скорость. Физические параметры
+ * (масса, инерция, силы) не входят - они интерполируются отдельно.
+ * Поддерживает арифметические операции для численного интегрирования.
+ * Создается только через Builder для обеспечения корректности данных.
  */
 template<typename metricType>
 class KinematicState {
@@ -23,39 +23,23 @@ public:
         Eigen::Vector3<metricType> eulerAngles_ = Eigen::Vector3<metricType>::Zero();
         Eigen::Vector3<metricType> angularVelocity_ = Eigen::Vector3<metricType>::Zero();
     public:
-        Builder& setPosition(const Eigen::Vector3<metricType>& v) { position_ = v; return *this; }
-        Builder& setVelocity(const Eigen::Vector3<metricType>& v) { velocity_ = v; return *this; }
-        Builder& setEulerAngles(const Eigen::Vector3<metricType>& v) { eulerAngles_ = v; return *this; }
-        Builder& setAngularVelocity(const Eigen::Vector3<metricType>& v) { angularVelocity_ = v; return *this; }
-        [[nodiscard]] KinematicState build() const {
-            return KinematicState(position_, velocity_, eulerAngles_, angularVelocity_);
-        }
+        Builder& setPosition(const Eigen::Vector3<metricType>& v);
+        Builder& setVelocity(const Eigen::Vector3<metricType>& v);
+        Builder& setEulerAngles(const Eigen::Vector3<metricType>& v);
+        Builder& setAngularVelocity(const Eigen::Vector3<metricType>& v);
+        [[nodiscard]] KinematicState build() const;
     };
-    static Builder createBuilder() { return Builder(); }
+    static Builder createBuilder();
 
     // === ГЕТТЕРЫ (только константные) ===
-    [[nodiscard]] const Eigen::Vector3<metricType>& getPosition() const { return position_; }
-    [[nodiscard]] const Eigen::Vector3<metricType>& getVelocity() const { return velocity_; }
-    [[nodiscard]] const Eigen::Vector3<metricType>& getEulerAngles() const { return eulerAngles_; }
-    [[nodiscard]] const Eigen::Vector3<metricType>& getAngularVelocity() const { return angularVelocity_; }
+    [[nodiscard]] const Eigen::Vector3<metricType>& getPosition() const;
+    [[nodiscard]] const Eigen::Vector3<metricType>& getVelocity() const;
+    [[nodiscard]] const Eigen::Vector3<metricType>& getEulerAngles() const;
+    [[nodiscard]] const Eigen::Vector3<metricType>& getAngularVelocity() const;
 
     // === АРИФМЕТИЧЕСКИЕ ОПЕРАТОРЫ ДЛЯ РК4 ===
-    KinematicState operator+(const KinematicState& other) const {
-        return KinematicState(
-            position_ + other.position_,
-            velocity_ + other.velocity_,
-            eulerAngles_ + other.eulerAngles_,
-            angularVelocity_ + other.angularVelocity_
-        );
-    }
-    KinematicState operator*(metricType scalar) const {
-        return KinematicState(
-            position_ * scalar,
-            velocity_ * scalar,
-            eulerAngles_ * scalar,
-            angularVelocity_ * scalar
-        );
-    }
+    KinematicState operator+(const KinematicState& other) const;
+    KinematicState operator*(metricType scalar) const;
 
 private:
     // Приватный конструктор — только через Builder
@@ -64,10 +48,7 @@ private:
         Eigen::Vector3<metricType> velocity,
         Eigen::Vector3<metricType> eulerAngles,
         Eigen::Vector3<metricType> angularVelocity
-    ) : position_(std::move(position)),
-        velocity_(std::move(velocity)),
-        eulerAngles_(std::move(eulerAngles)),
-        angularVelocity_(std::move(angularVelocity)) {}
+    );
 
     Eigen::Vector3<metricType> position_;
     Eigen::Vector3<metricType> velocity_;
@@ -77,6 +58,4 @@ private:
 
 // Глобальный оператор скаляр * состояние (для симметрии)
 template<typename metricType>
-inline KinematicState<metricType> operator*(metricType scalar, const KinematicState<metricType>& state) {
-    return state * scalar;
-}
+inline KinematicState<metricType> operator*(metricType scalar, const KinematicState<metricType>& state);

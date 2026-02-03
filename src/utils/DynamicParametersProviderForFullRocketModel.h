@@ -3,7 +3,7 @@
 //
 
 #pragma once
-#include "../../PCH.h"
+#include "PCH.h"
 #include "Interpolation/ComponentInterpolationManager.h"
 #include "../DynamicsSystem/ExtensionModels/Aerodinamics/IAeroModel.h"
 #include "../DynamicsSystem/ExtensionModels/Aerodinamics/SimpleAeroModel.h"

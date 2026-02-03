@@ -4,7 +4,7 @@
 
 
 #pragma once
-#include "../../../PCH.h"
+#include "PCH.h"
 
 /**
  * \brief Интерфейс для трансформаций между системами координат

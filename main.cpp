@@ -1,4 +1,4 @@
-#include "include/publicCore/Model.h"
+#include "include/core/Model.h"
 #include "src/DynamicsSystem/FullRocketODE/FullRocketODE.h"
 #include "src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.h"
 #include "src/WorldModel/ConcreteWorld/SimpleWorld/SimpleWorld.h"
@@ -17,7 +17,8 @@
 #include "src/utils/ObjInitParams.h"
 #include "src/utils/DataTable/DataTable1D/uploader1D_fromTXT.h"
 #include "src/utils/DataTable/DataTable2D/uploader2D_fromTXT.h"
-#include "GLOBAL_CONFIG.h"
+#include "src/utils/IParameterProvider.h"
+#include "include/core/GLOBAL_CONFIG.h"
 #include "src/PhysicalObjects/SimpleObject/SimpleObject.h"
 #include "src/utils/DynamicParametersProviderForFullRocketModel.h"
 #include "src/utils/ObjManager/ObjectManager.h"
@@ -37,7 +38,31 @@ auto loadDataTable = [](const std::string& filename) {
 int main() {
     try {
         // === ЗАГРУЗКА КОНФИГУРАЦИИ СИМУЛЯЦИИ ИЗ JSON ===
-        const auto config = SimulationConfig::loadFromJsonFile("../config/simulation.json");
+        // Попробуем несколько путей к конфигу
+        std::vector<std::string> config_paths = {
+            "config/simulation.json",           // Из корня проекта
+            "../config/simulation.json",       // Из build директории
+            "../../config/simulation_build.json"     // Из Release/Debug поддиректории
+        };
+        
+        SimulationConfig config;
+        bool config_loaded = false;
+        
+        for (const auto& path : config_paths) {
+            try {
+                config = SimulationConfig::loadFromJsonFile(path);
+                config_loaded = true;
+                std::cout << "Config loaded from: " << path << std::endl;
+                break;
+            } catch (const std::exception&) {
+                // Попробуем следующий путь
+                continue;
+            }
+        }
+        
+        if (!config_loaded) {
+            throw std::runtime_error("Cannot find simulation config file in any of the expected locations");
+        }
 
         struct ResourceManager {
             std::shared_ptr<SimpleWorld<GLOBAL_CONFIG::PROJECT_TYPE>> world;
@@ -76,7 +101,7 @@ int main() {
         resource_manager.describer->setWorldConfig(config.world_config);
         resource_manager.describer->setDataSaver(config.data_saver);
         resource_manager.describer->setEarthType(config.earth_type);
-        // resource_manager.describer->setSimulationObjects(...); // Если нужно установить список объектов
+
 
 
         resource_manager.csvDataSaver = std::make_unique<SimulationMomento<GLOBAL_CONFIG::PROJECT_TYPE>>();
@@ -163,7 +188,7 @@ int main() {
             std::move(golubka_V1_system),
             std::move(golubka_V1_init_params),
             std::move(golubka_V1_aero_input),
-            resource_manager.golubka_V1_interp_mgr,
+            std::weak_ptr<IParameterProvider<GLOBAL_CONFIG::PROJECT_TYPE>>(resource_manager.golubka_V1_interp_mgr),
             aero_model
         );
 
@@ -176,16 +201,29 @@ int main() {
         auto golubka_V1_ID = resource_manager.manager->addTrackedObject(resource_manager.golubka_V1);
 
         // === ШАГ 11: КОЛБЭК С ПРОВЕРКОЙ ВЫСОТЫ ===
-        auto continue_callback = [golubka_V1_ID](
-            const std::shared_ptr<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>& object_manager
+        auto continue_callback = [golubka_V1_ID, config](
+            const std::shared_ptr<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>& object_manager, const GLOBAL_CONFIG::PROJECT_TYPE current_time
         ) -> bool {
             const auto obj = object_manager->getObjectByID(golubka_V1_ID);
             if (!obj || !obj->isActive()) return false;
+            if (current_time > config.max_time) return false;
             const auto& state = obj->getStateSnapshot();
             return state.getPosition().z() >= 0.0f;  // Остановка при ударе о землю
         };
 
-        // === ШАГ 12: ЗАПУСК СИМУЛЯЦИИ ===
+
+
+        // === ШАГ 12: ПОЛУЧЕНИЕ ВСЕХ ID ИЗ МЕНЕДЖЕРА ===
+        auto all_objects = resource_manager.manager->getAllObjects();
+        std::vector<int> ids;
+        ids.reserve(all_objects.size());
+        for (const auto& [id, obj_weak_ptr] : all_objects) {
+            ids.push_back(id);
+        }
+
+        resource_manager.describer->setSimulationObjects(ids);
+
+        // === ШАГ 13: ЗАПУСК СИМУЛЯЦИИ ===
         IModel<GLOBAL_CONFIG::PROJECT_TYPE, CallbackType> model(
             std::move(solver),
             resource_manager.world,
@@ -198,7 +236,7 @@ int main() {
 
         model.run();
 
-        // === ШАГ 13: ЯВНОЕ СОХРАНЕНИЕ ===
+        // === ШАГ 14: ЯВНОЕ СОХРАНЕНИЕ ===
         if (resource_manager.csvDataSaver) {
             resource_manager.csvDataSaver->save();
         }

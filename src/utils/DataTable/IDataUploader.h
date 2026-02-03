@@ -3,7 +3,7 @@
 //
 
 #pragma once
-#include "../../../PCH.h"
+#include "PCH.h"
 
 template<typename InterpolationType>
 class IDataUploader {

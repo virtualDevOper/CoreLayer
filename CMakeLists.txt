@@ -3,60 +3,63 @@ project(CoreLayer)
 
 set(CMAKE_CXX_STANDARD 23)
 
+# Add cmake modules directory
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+
+# Добавляем директории для поиска заголовочных файлов
+include_directories(${CMAKE_SOURCE_DIR}/include/core)
+include_directories(${CMAKE_SOURCE_DIR}/libs/eigen-3.4.0)
+include_directories(${CMAKE_SOURCE_DIR}/src)
+
 
 
 add_executable(CoreLayer main.cpp
-        PCH.h
-        include/publicCore/Model.h
-        src/Model.tpp
-        src/OdeSolver/ODESolver.cpp
+        include/core/PCH.h
+        include/core/Model.h
+        include/core/Model.cpp
+        include/core/CONSTANTS.h
+        include/core/GLOBAL_CONFIG.h
         src/OdeSolver/ODESolver.h
-        src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.cpp
         src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.h
-        src/DynamicsSystem/IDynamicsSystem.cpp
+        src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.cpp
         src/DynamicsSystem/IDynamicsSystem.h
-        src/DynamicsSystem/FullRocketODE/FullRocketODE.cpp
         src/DynamicsSystem/FullRocketODE/FullRocketODE.h
+        src/DynamicsSystem/FullRocketODE/FullRocketODE.cpp
         src/WorldModel/AbstractWorldModel.h
         src/WorldModel/WorldComponents/WindModel/IWindModel.h
-        src/WorldModel/WorldComponents/WindModel/NoWindModel/NoWindModel.tpp
+        src/WorldModel/WorldComponents/WindModel/NoWindModel/NoWindModel.cpp
         src/WorldModel/WorldComponents/WindModel/NoWindModel/NoWindModel.h
-        src/WorldModel/ConcreteWorld/SimpleWorld/SimpleWorld.tpp
+        src/WorldModel/ConcreteWorld/SimpleWorld/SimpleWorld.cpp
         src/WorldModel/ConcreteWorld/SimpleWorld/SimpleWorld.h
         src/WorldModel/WorldComponents/AtmosphericModel/IAtmosphericModel.h
-        src/WorldModel/WorldComponents/AtmosphericModel/SimpleAtmosphericModel/AtmosphericModel.tpp
+        src/WorldModel/WorldComponents/AtmosphericModel/SimpleAtmosphericModel/AtmosphericModel.cpp
         src/WorldModel/WorldComponents/AtmosphericModel/SimpleAtmosphericModel/AtmosphericModel.h
-        CONSTANTS.h
         src/WorldModel/WorldComponents/GravityModel/IGravitationalModel.h
-        src/WorldModel/WorldComponents/GravityModel/KavendishModel/KavendishModel.tpp
+        src/WorldModel/WorldComponents/GravityModel/KavendishModel/KavendishModel.cpp
         src/WorldModel/WorldComponents/GravityModel/KavendishModel/KavendishModel.h
         src/WorldModel/WorldComponents/CoriolisModel/ICoriolisModel.h
-        src/WorldModel/WorldComponents/CoriolisModel/NoCoriolisForceModel/NoCoriolisForceModel.tpp
+        src/WorldModel/WorldComponents/CoriolisModel/NoCoriolisForceModel/NoCoriolisForceModel.cpp
         src/WorldModel/WorldComponents/CoriolisModel/NoCoriolisForceModel/NoCoriolisForceModel.h
         src/WorldModel/WorldComponents/ITerrainModel/ITerrainModel.h
-        src/WorldModel/WorldComponents/ITerrainModel/PlaneTerrain/PlaneTerrain.tpp
+        src/WorldModel/WorldComponents/ITerrainModel/PlaneTerrain/PlaneTerrain.cpp
         src/WorldModel/WorldComponents/ITerrainModel/PlaneTerrain/PlaneTerrain.h
-        src/PhysicalObjects/Aircraft/AbstractAircraft.cpp
         src/PhysicalObjects/Aircraft/AbstractAircraft.h
-        src/SimulationMomento/SimulationMomento.cpp
         src/SimulationMomento/SimulationMomento.h
         src/utils/ObjSnapshot.h
-        src/SimulationMomento/SaveStrategy/SaveStrategy.cpp
+        src/utils/ObjSnapshot.cpp
         src/SimulationMomento/SaveStrategy/SaveStrategy.h
         src/SimulationMomento/StateStorage.h
-        src/PhysicalObjects/AbstractObject.cpp
         src/PhysicalObjects/AbstractObject.h
-        src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.cpp
+        src/PhysicalObjects/AbstractObject.cpp
         src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModel.cpp
         src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModel.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModelAdapter.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/RocketAeroInput.h
         src/utils/ObjInitParams.h
-        GLOBAL_CONFIG.h
-        src/utils/ObjManager/ObjectManager.cpp
         src/utils/ObjManager/ObjectManager.h
         src/utils/SimulationDescriber.h
+        src/utils/SimulationDescriber.cpp
         src/utils/ContinuationCallback.h
         src/utils/Interpolation/ILinearInterpolator/ILinearInterpolator.h
         src/utils/Interpolation/IBilinearInterpolator/IBilinearInterpolator.h
@@ -74,7 +77,6 @@ add_executable(CoreLayer main.cpp
         src/DynamicsSystem/SimpleKinematicsSystem/SimpleKinematicsSystem.h
         src/PhysicalObjects/SimpleObject/SimpleObject.cpp
         src/PhysicalObjects/SimpleObject/SimpleObject.h
-        src/utils/Interpolation/ComponentInterpolationManager.cpp
         src/utils/Interpolation/ComponentInterpolationManager.h
         src/utils/ConeDirection/ConeDirection.cpp
         src/utils/ConeDirection/ConeDirection.h
@@ -83,9 +85,17 @@ add_executable(CoreLayer main.cpp
         src/DynamicsSystem/ExtensionModels/Aerodinamics/IAeroModel.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/SimpleAeroModel.h
         src/utils/KinematicState.h
+        src/utils/KinematicState.cpp
         src/utils/SimulationConfig.cpp
         src/utils/SimulationConfig.h
+        src/utils/IParameterProvider.h
 )
+
+# Add tests subdirectory
+option(BUILD_TESTS "Build tests" ON)
+if(BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
 
 
 

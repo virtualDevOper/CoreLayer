@@ -29,13 +29,13 @@ public:
         std::unique_ptr<IDynamicsSystem<metricType>> sys,
         std::unique_ptr<ObjInitParams<metricType>> initial_params,
         std::unique_ptr<RocketAeroInput<metricType>> aero_input,
-        std::shared_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr,
+        std::weak_ptr<IParameterProvider<metricType>> param_provider,  // Изменено: weak_ptr
         std::shared_ptr<IAeroModel<metricType>> aero_model)
         : GuidedMissle<metricType, RocketAeroInput<metricType>>(
             std::move(sys),
             std::move(initial_params),
             std::move(aero_input),
-            comp_interp_mgr),
+            param_provider),
           aero_model_(std::move(aero_model))
     {
         if (!aero_model_) {

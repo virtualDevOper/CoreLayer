@@ -24,12 +24,12 @@ public:
         std::unique_ptr<IDynamicsSystem<metricType>> sys,
         std::unique_ptr<ObjInitParams<metricType>> initial_params,
         std::unique_ptr<AeroInput> aero_input,
-        std::shared_ptr<ComponentInterpolationManager<metricType>> comp_interp_mgr)
+        std::weak_ptr<IParameterProvider<metricType>> param_provider)  // Изменено: weak_ptr
         : AbstractAircraft<metricType, AeroInput>(
             std::move(sys),
             std::move(initial_params),
             std::move(aero_input),
-            comp_interp_mgr) {}
+            param_provider) {}
 
     // === ДАТЧИКИ БИНС ===
     virtual Eigen::Vector3<metricType> getGyroscopeAngularVelocity(metricType t) const = 0;

@@ -11,5 +11,3 @@ public:
     metricType getHeight(metricType x, metricType y) const override;
     [[nodiscard]] bool hasHeightMap() const override;
 };
-
-#include "PlaneTerrain.tpp"

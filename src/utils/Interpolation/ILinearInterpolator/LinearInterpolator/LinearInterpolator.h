@@ -3,7 +3,7 @@
 //
 
 #pragma once
-#include "../../../../../PCH.h"
+#include "PCH.h"
 #include "../ILinearInterpolator.h"
 
 template<typename metricType>

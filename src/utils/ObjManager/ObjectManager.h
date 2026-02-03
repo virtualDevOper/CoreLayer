@@ -20,13 +20,14 @@ template <typename metricType>
 class ObjectManager final : public IObjectManager<metricType> {
 private:
     std::unordered_map<int, std::shared_ptr<AbstractObject<metricType>>> all_objects_;
-    std::atomic<int> next_id_{0};
+    std::atomic<uint64_t> next_id_{0};  // Изменено: uint64_t для предотвращения переполнения
     mutable std::mutex mutex_; // mutable позволяет изменение члена класса даже в константных функциях-членах(пенисах)
 
 
 public:
     ObjectManager() = default;
     ObjectManager(const ObjectManager&) = delete;
+
     ObjectManager& operator=(const ObjectManager&) = delete;
 
 

@@ -4,9 +4,10 @@
 
 dataTables/
 libs/
-results_data/simulation_data_*.txt
-docs/uml/*.puml
-tools/__pycache__/
+data/output/results_data/simulation_data_*.txt
+build/
+.venv/
+project_all_files.txt
 ### C++ ###
 # Prerequisites
 *.d
@@ -174,7 +175,6 @@ CMakeUserPresets.json
 *-prefix/
 
 ### Executable ###
-*.bat
 *.cgi
 *.com
 *.gadget
@@ -182,6 +182,9 @@ CMakeUserPresets.json
 *.pif
 *.vb
 *.wsf
+
+# Allow specific batch files that are part of the project
+!collect_all.bat
 
 ### Git ###
 # Created by git for backups. To disable backups in Git:
@@ -225,3 +228,73 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/cmake,clion,git,c++,executable,windows
+
+# Project-specific additions
+# Build directories
+cmake-build-debug/
+cmake-build-release/
+cmake-build-debug-mingw/
+cmake-build-default-mingw/
+
+# Output data files
+data/output/
+*.log
+*.txt.bak
+
+# Python virtual environments and cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+
+# Visual Studio Code
+.vscode/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Core dumps
+core
+core.*
+
+# Profiling data
+*.prof
+*.gprof
+
+# Coverage reports
+*.gcov
+*.gcda
+*.gcno
+coverage/
+htmlcov/
+
+# Documentation build
+docs/_build/
+docs/html/
+docs/latex/
+
+# Test results
+test_results/
+*.xml
+junit.xml
+
+# Simulation output files
+simulation_results_*
+flight_data_*
+trajectory_*

@@ -1,11 +1,11 @@
 #pragma once
-#include "../../../PCH.h"
+#include "PCH.h"
 #include "../IDynamicsSystem.h"
 
 template <typename metricType>
 class SimpleKinematicsSystem final : public IDynamicsSystem<metricType> {
 public:
-    std::string get_description() override {
+    std::string get_description() const override {
         return "Простая кинематическая система: dx/dt = v, dv/dt = 0";
     }
 
