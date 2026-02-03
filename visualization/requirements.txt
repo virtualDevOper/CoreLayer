@@ -1,0 +1,16 @@
+# Flight Data Visualizer Dependencies
+# Основные библиотеки для визуализации данных симуляции полёта
+
+# Обработка данных
+pandas>=1.3.0
+numpy>=1.20.0
+
+# Визуализация
+matplotlib>=3.5.0
+
+# GUI (tkinter входит в стандартную поставку Python)
+# tkinter - встроен в Python, дополнительная установка не требуется
+
+# Дополнительные утилиты
+pathlib  # встроен в Python 3.4+
+threading  # встроен в Python
