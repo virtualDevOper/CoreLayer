@@ -4,10 +4,10 @@
 #pragma once
 #include "PCH.h"
 #include "../ODESolver.h"
-#include "../../utils/KinematicState.h"  // ← НОВАЯ ЗАВИСИМОСТЬ
+#include "../../utils/KinematicStateDerivative/KinematicStateDerivative.h"
 
 /**
- * \brief Четвёртый порядок метода Рунге–Кутты для интегрирования систем ОДУ.
+ * \brief  Метод Рунге–Кутты 4 для интегрирования систем ОДУ.
  *
  * \tparam metricType  Тип данных для метрических величин.
  * \tparam CallbackType Тип колбэка продолжения интегрирования (останавливает расчёт по условию).
@@ -20,7 +20,7 @@
 template <typename metricType, typename CallbackType>
 class RungeKutta4Solver final : public ODESolver<metricType, CallbackType> {
 public:
-    RungeKutta4Solver() = default;  // Конструктор по умолчанию
+    RungeKutta4Solver() = default;
     
     void solve(
         std::shared_ptr<IObjectManager<metricType>> object_manager,
@@ -35,12 +35,10 @@ private:
         const ObjSnapshot<metricType>& current_snapshot,
         metricType current_time,
         metricType step_size,
-        IDynamicsSystem<metricType>* sys  // Изменено: принимаем сырой указатель для наблюдения
+        IDynamicsSystem<metricType>* sys
     );
 };
 
-
-// === РЕАЛИЗАЦИЯ ШАБЛОНА (должна быть в заголовочном файле) ===
 
 template <typename metricType, typename CallbackType>
 void RungeKutta4Solver<metricType, CallbackType>::solve(
@@ -51,16 +49,16 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
     SimulationMomento<metricType>& momento
 ) {
     if (step_size <= 0) {
-        throw std::invalid_argument("Step size must be positive: " + std::to_string(step_size));
+        throw std::invalid_argument("Шаг по времени должен быть положительным: " + std::to_string(step_size));
     }
     if (t_start < 0) {
-        throw std::invalid_argument("Start time cannot be negative: " + std::to_string(t_start));
+        throw std::invalid_argument("Время начала расчета не может быть негативным: " + std::to_string(t_start));
     }
     if (!object_manager || object_manager->getObjectCount() == 0) {
-        throw std::invalid_argument("No objects to process");
+        throw std::invalid_argument("Нет объектов для расчетов");
     }
     if (!continue_callback) {
-        throw std::invalid_argument("Continue callback not set");
+        throw std::invalid_argument("Continue callback не установлен");
     }
 
     metricType current_time = t_start;
@@ -75,7 +73,7 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
             auto& current_state_storage = momento.getStateStorageByID(id);
             const auto& states = current_state_storage.getStates();
             if (states.empty()) {
-                throw std::runtime_error("State storage is empty for object ID: " + std::to_string(id));
+                throw std::runtime_error("В хранителе объектов состояние пустое: " + std::to_string(id));
             }
             const auto& current_state = states.back();
 
@@ -84,10 +82,22 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                     auto new_state = solveOneStepForOneObj(
                         current_state, current_time, step_size, object->getDynamicSys()
                     );
-                    momento.addSnapshotByID(id, std::move(new_state));
+                    // Создаём копию для momento перед перемещением
+                    auto new_state_copy = ObjSnapshot<metricType>::createBuilder(new_state->getKinematics())
+                        .setTime(new_state->getTime())
+                        .setMass(new_state->getMass())
+                        .setInertia(new_state->getInertia())
+                        .setTotalForce(new_state->getTotalForce())
+                        .setTotalMoment(new_state->getTotalMoment())
+                        .buildUnique();
+                    
+                    // Обновляем состояние объекта для колбэков
+                    object->updateSnapshot(std::move(new_state));
+                    // Сохраняем копию в momento
+                    momento.addSnapshotByID(id, std::move(new_state_copy));
                 } catch (const std::exception& e) {
-                    std::cerr << "Error computing derivatives for object ID " << id
-                              << " at time " << current_time << ": " << e.what() << std::endl;
+                    std::cerr << "Ошибка с расчетом производной у объекта с id:  " << id
+                              << " во временном промежутке: " << current_time << ": " << e.what() << std::endl;
                     throw;
                 }
             } else {
@@ -102,7 +112,7 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                 break;
             }
         } catch (const std::exception& e) {
-            std::cerr << "Error in continue callback: " << e.what() << std::endl;
+            std::cerr << "Проблема в continue callback: " << e.what() << std::endl;
             break;
         }
     }

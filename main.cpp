@@ -23,7 +23,6 @@
 #include "src/utils/DynamicParametersProviderForFullRocketModel.h"
 #include "src/utils/ObjManager/ObjectManager.h"
 #include "src/utils/SimulationConfig.h"
-#include <cmath>
 
 auto loadDataTable = [](const std::string& filename) {
     try {
@@ -94,7 +93,7 @@ int main() {
         auto Iyy_data = loadDataTable(config.Iyy_path);
         auto Izz_data = loadDataTable(config.Izz_path);
 
-        // === ШАГ 4: КРИТИЧЕСКИ ВАЖНО — СНАЧАЛА СОЗДАТЬ И ИНИЦИАЛИЗИРОВАТЬ МЕНЕДЖЕР ===
+        // === ШАГ 4:СОЗДАТЬ И ИНИЦИАЛИЗИРОВАТЬ интерполятор ===
         resource_manager.golubka_V1_interp_mgr = std::make_shared<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
         resource_manager.golubka_V1_interp_mgr->setThrust(
             std::move(Thrust_x_t_data),
@@ -109,9 +108,9 @@ int main() {
             std::move(Izz_data)
         );
 
-        // === ШАГ 5: ТОЛЬКО ТЕПЕРЬ МОЖНО СОЗДАВАТЬ ПРОВАЙДЕР (менеджер уже существует!) ===
+        // === ШАГ 5:ТЕПЕРЬ МОЖНО СОЗДАВАТЬ ПРОВАЙДЕР (менеджер уже существует!) ===
         auto paramsProvider = std::make_shared<DynamicParametersProviderForFullRocketModel<GLOBAL_CONFIG::PROJECT_TYPE>>(
-            resource_manager.golubka_V1_interp_mgr  // ← shared_ptr живёт в resource_manager!
+            resource_manager.golubka_V1_interp_mgr
         );
 
         // === ШАГ 6: ЗАПОЛНЕНИЕ АЭРОДИНАМИЧЕСКИХ ПАРАМЕТРОВ ===
@@ -176,7 +175,7 @@ int main() {
         resource_manager.manager = std::make_shared<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
         auto golubka_V1_ID = resource_manager.manager->addTrackedObject(resource_manager.golubka_V1);
 
-        // === ШАГ 11: КОЛБЭК С ПРОВЕРКОЙ ВЫСОТЫ ===
+        // === ШАГ 11: КОЛБЭК С ПРОВЕРКОЙ ВЫСОТЫ (пока что он будет тут) ===
         auto continue_callback = [golubka_V1_ID, config](
             const std::shared_ptr<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>& object_manager, const GLOBAL_CONFIG::PROJECT_TYPE current_time
         ) -> bool {
@@ -184,7 +183,8 @@ int main() {
             if (!obj || !obj->isActive()) return false;
             if (current_time > config.max_time) return false;
             const auto& state = obj->getStateSnapshot();
-            return state.getPosition().z() >= 0.0f;  // Остановка при ударе о землю
+            const auto height = state.getPosition().z();
+            return height >= -0.1f;  // Остановка при ударе о землю
         };
 
 
@@ -207,7 +207,7 @@ int main() {
             std::move(resource_manager.describer),
             resource_manager.manager,
             std::move(continue_callback),
-            static_cast<GLOBAL_CONFIG::PROJECT_TYPE>(config.time_step)
+            config.time_step
         );
 
         model.run();

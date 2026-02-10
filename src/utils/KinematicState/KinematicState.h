@@ -37,6 +37,17 @@ public:
     [[nodiscard]] const Eigen::Vector3<metricType>& getEulerAngles() const;
     [[nodiscard]] const Eigen::Vector3<metricType>& getAngularVelocity() const;
 
+    // === ENU-SPECIFIC ACCESSORS ===
+    // Position components in ENU coordinates
+    [[nodiscard]] metricType getEast() const { return position_.x(); }
+    [[nodiscard]] metricType getNorth() const { return position_.y(); }
+    [[nodiscard]] metricType getAltitude() const { return position_.z(); }
+    
+    // Velocity components in ENU coordinates
+    [[nodiscard]] metricType getVelocityEast() const { return velocity_.x(); }
+    [[nodiscard]] metricType getVelocityNorth() const { return velocity_.y(); }
+    [[nodiscard]] metricType getVelocityUp() const { return velocity_.z(); }
+
     // === АРИФМЕТИЧЕСКИЕ ОПЕРАТОРЫ ДЛЯ РК4 ===
     KinematicState operator+(const KinematicState& other) const;
     KinematicState operator*(metricType scalar) const;

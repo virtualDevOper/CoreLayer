@@ -22,56 +22,62 @@ std::string FullRocketODE<metricType>::get_description() const {
 }
 
 template <typename metricType>
-std::unique_ptr<KinematicState<metricType>> FullRocketODE<metricType>::get_rhs_derivatives(
-    const KinematicState<metricType>& kinematics,
+std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>::get_rhs_derivatives(
+    const KinematicState<metricType>& state,
     metricType t
 ) {
     auto params_provider = params_provider_.lock();
     if (!params_provider) {
-        throw std::runtime_error("DynamicParametersProvider has been destroyed");
+        throw std::runtime_error("DynamicParametersProvider уже был уничтожен");
     }
-    
-    metricType mass = params_provider->getMass(t);
+        metricType mass = params_provider->getMass(t);
     auto inertia = params_provider->getInertia(t);
 
-    const auto& V_earth = kinematics.getVelocity();
-    const auto& euler = kinematics.getEulerAngles();
-    auto V_body = transformVelocityEarthToBody(V_earth, euler);
+    const auto& V_ENU = state.getVelocity();
+    const auto& euler = state.getEulerAngles();
+    
+    // euler(0) = psi (yaw), euler(1) = theta (pitch) , euler(2) = gamma (roll)
+    auto euler_angles = core::math::EulerAngles::ZYX(euler(0), euler(1), euler(2));
+    const auto dcm = core::math::eulerToDCM(euler_angles, core::math::CoordinateFrame::ENU);
+    auto V_body = core::math::rotateVector(V_ENU, dcm, core::math::CoordinateFrame::ENU, false); // body_to_enu = false, так как матрицу нужно траснспонировать
 
-    const auto& omega = kinematics.getAngularVelocity();
-
-    // Compute aerodynamic forces and moments
+    const auto& angularVelocity = state.getAngularVelocity();
+    // тут стопрацентная ошибка у нас, так как поменяли системы координат
     metricType alpha_p = computeSpaceAngleOfAttack(V_body);
     metricType phi_p = computeAerodynamicRollAngle(V_body);
     metricType mach = computeMachNumber(V_body.norm(), Eigen::Vector3<metricType>::Zero()); // TODO: pass real position
-    metricType rho = computeAirDensity(Eigen::Vector3<metricType>::Zero()); // TODO: pass real position
+    metricType rho = computeAirDensity(state.getPosition());
 
     auto aero_model = params_provider->getAeroModel();
+    /*
     auto aero_forces_body = aero_model->computeAerodynamicForces(V_body, rho, mach);
     auto aero_moments_body = aero_model->computeAerodynamicMoments(V_body, omega, rho, mach, euler);
+    */
 
-    last_computed_forces_ = aero_forces_body;
-    last_computed_moments_ = aero_moments_body;
+    auto aero_forces_body = Eigen::Vector3<metricType>::Zero();
+    auto aero_moments_body = Eigen::Vector3<metricType>::Zero();
+
+
+
 
     auto thrust_body = params_provider->getThrust(t);
+    //auto thrust_body = Eigen::Vector3<metricType>::Zero();
+    // Thrust is correct at the beginning, just check forces for coordinate system
+    auto F_sum_ENU = computeTotalForcesENU(aero_forces_body, thrust_body, mass, dcm);
+    last_computed_forces_ = F_sum_ENU;
 
-    auto F_sum_body = computeTotalForces(aero_forces_body, thrust_body, mass, euler);
-    last_computed_forces_ = F_sum_body;
+    auto dV_ENU = computeLinearAccelerationENU(F_sum_ENU, mass);
+    auto dEuler_dt = computeEulerAnglesDerivatives(euler, angularVelocity);
+    auto dAngularVelocity_dt = computeAngularAccelerationBody(aero_moments_body, inertia, angularVelocity);
 
-    // Compute derivatives
-    auto dV_body_dt = computeLinearAccelerationBody(V_body, omega, F_sum_body, mass);
-    auto dV_earth_dt = transformAccelerationBodyToEarth(dV_body_dt, V_body, omega, euler);
-    auto dEuler_dt = computeEulerAnglesDerivatives(euler, omega);
-    auto dOmega_dt = computeAngularAccelerationBody(aero_moments_body, inertia, omega);
-
-    return std::make_unique<KinematicState<metricType>>(
-        KinematicState<metricType>::createBuilder()
-            .setPosition(kinematics.getVelocity())  // dx/dt = v
-            .setVelocity(dV_earth_dt)               // dv/dt = computed acceleration
-            .setEulerAngles(dEuler_dt)              // dEuler/dt
-            .setAngularVelocity(dOmega_dt)          // dOmega/dt
-            .build()
+    return std::make_unique<KinematicStateDerivative<metricType>>(
+            V_ENU,  // dPosition/dt = Velocity
+            dV_ENU,               // dVelocity/dt = Acceleration
+            dEuler_dt,              // dEuler/dt
+            dAngularVelocity_dt          // dАngularVelocity/dt
     );
+
+
 }
 
 template <typename metricType>
@@ -80,29 +86,7 @@ std::unique_ptr<ObjSnapshot<metricType>> FullRocketODE<metricType>::augmentSnaps
     metricType t
 ) const {
     auto params_provider = params_provider_.lock();
-    if (!params_provider) {
-        throw std::runtime_error("DynamicParametersProvider expired in augmentSnapshot");
-    }
-
-    // Transform forces and moments from body to earth frame for logging
-    const auto& euler = kinematics.getEulerAngles();
-    std::array<metricType, 3> F_body_arr = {
-        last_computed_forces_.x(),
-        last_computed_forces_.y(),
-        last_computed_forces_.z()
-    };
-    auto F_earth_arr = TransformationFactory<metricType>::createBodyToEarthTransform(
-        euler.x(), euler.y(), euler.z(), F_body_arr)->result_getter();
-    Eigen::Vector3<metricType> F_earth(F_earth_arr[0], F_earth_arr[1], F_earth_arr[2]);
-
-    std::array<metricType, 3> M_body_arr = {
-        last_computed_moments_.x(),
-        last_computed_moments_.y(),
-        last_computed_moments_.z()
-    };
-    auto M_earth_arr = TransformationFactory<metricType>::createBodyToEarthTransform(
-        euler.x(), euler.y(), euler.z(), M_body_arr)->result_getter();
-    Eigen::Vector3<metricType> M_earth(M_earth_arr[0], M_earth_arr[1], M_earth_arr[2]);
+    if (!params_provider) {throw std::runtime_error("DynamicParametersProvider expired in augmentSnapshot");}
 
     return ObjSnapshot<metricType>::createBuilder(kinematics)
         .setTime(t)
@@ -110,36 +94,11 @@ std::unique_ptr<ObjSnapshot<metricType>> FullRocketODE<metricType>::augmentSnaps
         .setInertia(params_provider->getInertia(t))
         .setTotalForce(last_computed_forces_)
         .setTotalMoment(last_computed_moments_)
-        .setTotalForceEarth(F_earth)
-        .setTotalMomentEarth(M_earth)
-        .buildUnique();
+            .buildUnique();
 }
 
-template <typename metricType>
-Eigen::Vector3<metricType> FullRocketODE<metricType>::transformVelocityEarthToBody(
-    const Eigen::Vector3<metricType>& V_earth,
-    const Eigen::Vector3<metricType>& euler) const
-{
-    std::array<metricType, 3> V_earth_array = {V_earth(0), V_earth(1), V_earth(2)};
-    auto transform = std::make_unique<Zemn_to_svyaz_Direction<metricType>>(
-        euler(0), euler(1), euler(2), V_earth_array);
-    auto result = transform->result_getter();
-    return Eigen::Vector3<metricType>(result[0], result[1], result[2]);
-}
 
-template <typename metricType>
-Eigen::Vector3<metricType> FullRocketODE<metricType>::transformAccelerationBodyToEarth(
-    const Eigen::Vector3<metricType>& a_body,
-    const Eigen::Vector3<metricType>& V_body,
-    const Eigen::Vector3<metricType>& omega,
-    const Eigen::Vector3<metricType>& euler) const
-{
-    std::array<metricType, 3> a_body_array = {a_body(0), a_body(1), a_body(2)};
-    auto transform = std::make_unique<Svyaz_to_zemn_Direction<metricType>>(
-        euler(0), euler(1), euler(2), a_body_array);
-    auto result = transform->result_getter();
-    return Eigen::Vector3<metricType>(result[0], result[1], result[2]);
-}
+
 
 template <typename metricType>
 metricType FullRocketODE<metricType>::computeSpaceAngleOfAttack(const Eigen::Vector3<metricType>& V_body) const {
@@ -180,66 +139,52 @@ metricType FullRocketODE<metricType>::computeAirDensity(const Eigen::Vector3<met
 }
 
 template <typename metricType>
-Eigen::Vector3<metricType> FullRocketODE<metricType>::computeTotalForces(
-    const Eigen::Vector3<metricType>& F_aero,
-    const Eigen::Vector3<metricType>& F_thrust,
+Eigen::Vector3<metricType> FullRocketODE<metricType>::computeTotalForcesENU(
+    const Eigen::Vector3<metricType>& F_aero_body,
+    const Eigen::Vector3<metricType>& F_thrust_body,
     metricType mass,
-    const Eigen::Vector3<metricType>& euler) const
+    const core::math::Matrix3& dcm) const
 {
-    std::array<metricType, 3> gravity_array = {0, -mass * PhysicsConstants::g, 0};
-    auto gravity_transform = std::make_unique<Zemn_to_svyaz_Direction<metricType>>(
-        euler(0), euler(1), euler(2), gravity_array);
-    auto gravity_body_array = gravity_transform->result_getter();
-    Eigen::Vector3<metricType> gravity_body(
-        gravity_body_array[0], gravity_body_array[1], gravity_body_array[2]);
-    return F_aero + F_thrust + gravity_body;
+    // Gravity force in ENU (Z up -> -mg)
+    Eigen::Vector3<metricType> gravity_ENU(0, 0, -mass * PhysicsConstants::g);
+
+    // Transform aerodynamic and thrust forces from body to ENU
+    auto F_aero_ENU = core::math::rotateVector(F_aero_body, dcm, core::math::CoordinateFrame::ENU, true);
+    auto F_thrust_ENU = core::math::rotateVector(F_thrust_body, dcm, core::math::CoordinateFrame::ENU, true);
+
+    // Sum all forces in ENU
+    return F_aero_ENU + F_thrust_ENU + gravity_ENU;
 }
 
 template <typename metricType>
-Eigen::Vector3<metricType> FullRocketODE<metricType>::computeLinearAccelerationBody(
-    const Eigen::Vector3<metricType>& V_body,
-    const Eigen::Vector3<metricType>& omega,
+Eigen::Vector3<metricType> FullRocketODE<metricType>::computeLinearAccelerationENU(
     const Eigen::Vector3<metricType>& F_sum,
     metricType mass) const
 {
-    metricType v_x = V_body(0), v_y = V_body(1), v_z = V_body(2);
-    metricType w_x = omega(0), w_y = omega(1), w_z = omega(2);
     Eigen::Vector3<metricType> dV_dt;
-    dV_dt(0) = -w_y * v_z + w_z * v_y + F_sum(0) / mass;
-    dV_dt(1) = -w_z * v_x + w_x * v_z + F_sum(1) / mass;
-    dV_dt(2) = -w_x * v_y + w_y * v_x + F_sum(2) / mass;
+    dV_dt(0) = F_sum(0) / mass;
+    dV_dt(1) = F_sum(1) / mass;
+    dV_dt(2) = F_sum(2) / mass;
     return dV_dt;
 }
 
 template <typename metricType>
 Eigen::Vector3<metricType> FullRocketODE<metricType>::computeEulerAnglesDerivatives(
     const Eigen::Vector3<metricType>& euler,
-    const Eigen::Vector3<metricType>& omega) const
+    const Eigen::Vector3<metricType>& angularVelocity) const
 {
-    metricType theta = euler(0);  // pitch
-    metricType psi = euler(1);    // yaw
-    metricType gamma = euler(2);  // roll
-    metricType w_x = omega(0);
-    metricType w_y = omega(1);
-    metricType w_z = omega(2);
-    metricType cos_theta = std::cos(theta);
-    metricType sin_theta = std::sin(theta);
-    metricType cos_gamma = std::cos(gamma);
-    metricType sin_gamma = std::sin(gamma);
-    metricType tan_theta = std::tan(theta);
+    // Use FlightMath library function for Euler rate computation in ENU coordinates
+    // euler(0) = psi (yaw), euler(1) = theta (pitch), euler(2) = gamma (roll)
+    auto euler_angles = core::math::EulerAngles::ZYX(euler(0), euler(1), euler(2));
     
-    Eigen::Vector3<metricType> dEuler_dt;
-    if (std::abs(cos_theta) > 1e-6) {
-        dEuler_dt(1) = (w_y * cos_gamma - w_z * sin_gamma) / cos_theta;  // dPsi/dt
-    } else {
-        dEuler_dt(1) = 0.0;
-    }
-    dEuler_dt(2) = w_x - tan_theta * (w_y * cos_gamma - w_z * sin_gamma);  // dGamma/dt
-    dEuler_dt(0) = w_y * sin_gamma + w_z * cos_gamma;  // dTheta/dt
+    // Convert angular velocity to Euler rates using FlightMath function
+    // This replaces manual matrix math with library function
+    auto dEuler_dt = core::math::angularVelocityToEulerRates(
+        euler_angles, 
+        angularVelocity, 
+        core::math::CoordinateFrame::ENU
+    );
     
-    if (!std::isfinite(dEuler_dt(0)) || !std::isfinite(dEuler_dt(1)) || !std::isfinite(dEuler_dt(2))) {
-        throw std::runtime_error("Non-finite values in Euler angles derivatives");
-    }
     return dEuler_dt;
 }
 

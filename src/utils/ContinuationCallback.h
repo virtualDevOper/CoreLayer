@@ -9,10 +9,10 @@
 
 
 inline bool isMainRocketActive(const std::shared_ptr<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>> &object_manager, const int mainRocID) {
-    const auto obj = object_manager->getObjectByID(mainRocID);
-    if (!obj || !obj->isActive()) return false;
-    const auto& state = obj->getStateSnapshot();
-    return state.getPosition().z() >= 0.0f; // Остановка при ударе о землю
+    if (const auto obj = object_manager->getObjectByID(mainRocID); !obj || !obj->isActive()) return false;
+    /*const auto& state = obj->getStateSnapshot();
+    return state.getPosition().z() >= 0.0f; // Остановка при ударе о землю*/
+    return true;
 }
 
 // можно через фабрику сделать, чтобы условия были кастомными.

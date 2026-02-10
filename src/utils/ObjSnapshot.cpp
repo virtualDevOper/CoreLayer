@@ -8,9 +8,7 @@ ObjSnapshot<metricType>::ObjSnapshot()
       mass_(std::numeric_limits<metricType>::quiet_NaN()),
       inertia_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())),
       totalForce_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())),
-      totalMoment_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())),
-      totalForceEarth_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())),
-      totalMomentEarth_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())) {}
+      totalMoment_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())){}
 
 // Delegate to kinematics for backward compatibility
 template<typename metricType>
@@ -58,15 +56,6 @@ const Eigen::Vector3<metricType>& ObjSnapshot<metricType>::getTotalMoment() cons
     return totalMoment_;
 }
 
-template<typename metricType>
-const Eigen::Vector3<metricType>& ObjSnapshot<metricType>::getTotalForceEarth() const {
-    return totalForceEarth_;
-}
-
-template<typename metricType>
-const Eigen::Vector3<metricType>& ObjSnapshot<metricType>::getTotalMomentEarth() const {
-    return totalMomentEarth_;
-}
 
 template<typename metricType>
 const KinematicState<metricType>& ObjSnapshot<metricType>::getKinematics() const {
@@ -103,17 +92,7 @@ typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::set
     return *this;
 }
 
-template<typename metricType>
-typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setTotalForceEarth(const Eigen::Vector3<metricType>& f) {
-    totalForceEarth_ = f;
-    return *this;
-}
 
-template<typename metricType>
-typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setTotalMomentEarth(const Eigen::Vector3<metricType>& m) {
-    totalMomentEarth_ = m;
-    return *this;
-}
 
 template<typename metricType>
 std::unique_ptr<ObjSnapshot<metricType>> ObjSnapshot<metricType>::Builder::buildUnique() const {
@@ -124,8 +103,6 @@ std::unique_ptr<ObjSnapshot<metricType>> ObjSnapshot<metricType>::Builder::build
     snapshot->inertia_ = inertia_;
     snapshot->totalForce_ = totalForce_;
     snapshot->totalMoment_ = totalMoment_;
-    snapshot->totalForceEarth_ = totalForceEarth_;
-    snapshot->totalMomentEarth_ = totalMomentEarth_;
     return snapshot;
 }
 
@@ -160,15 +137,7 @@ std::map<std::string, metricType> ObjSnapshot<metricType>::getParams() const {
     if (!std::isnan(totalMoment_.x())) params["totalMoment_x"] = totalMoment_.x();
     if (!std::isnan(totalMoment_.y())) params["totalMoment_y"] = totalMoment_.y();
     if (!std::isnan(totalMoment_.z())) params["totalMoment_z"] = totalMoment_.z();
-    
-    // Earth frame forces and moments if available
-    if (!std::isnan(totalForceEarth_.x())) params["totalForceEarth_x"] = totalForceEarth_.x();
-    if (!std::isnan(totalForceEarth_.y())) params["totalForceEarth_y"] = totalForceEarth_.y();
-    if (!std::isnan(totalForceEarth_.z())) params["totalForceEarth_z"] = totalForceEarth_.z();
-    if (!std::isnan(totalMomentEarth_.x())) params["totalMomentEarth_x"] = totalMomentEarth_.x();
-    if (!std::isnan(totalMomentEarth_.y())) params["totalMomentEarth_y"] = totalMomentEarth_.y();
-    if (!std::isnan(totalMomentEarth_.z())) params["totalMomentEarth_z"] = totalMomentEarth_.z();
-    
+
     return params;
 }
 

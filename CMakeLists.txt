@@ -78,17 +78,17 @@ add_executable(CoreLayer main.cpp
         src/PhysicalObjects/SimpleObject/SimpleObject.cpp
         src/PhysicalObjects/SimpleObject/SimpleObject.h
         src/utils/Interpolation/ComponentInterpolationManager.h
-        src/utils/ConeDirection/ConeDirection.cpp
-        src/utils/ConeDirection/ConeDirection.h
         src/utils/DynamicParametersProviderForFullRocketModel.h
         src/utils/ObjManager/IObjectManager.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/IAeroModel.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/SimpleAeroModel.h
-        src/utils/KinematicState.h
-        src/utils/KinematicState.cpp
+        src/utils/KinematicState/KinematicState.h
+        src/utils/KinematicState/KinematicState.cpp
         src/utils/SimulationConfig.cpp
         src/utils/SimulationConfig.h
         src/utils/IParameterProvider.h
+        src/utils/KinematicStateDerivative/KinematicStateDerivative.cpp
+        src/utils/KinematicStateDerivative/KinematicStateDerivative.h
 )
 
 # Add tests subdirectory

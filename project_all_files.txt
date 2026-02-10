@@ -1,5 +1,5 @@
 # CoreLayer - Полный код проекта
-# Сгенерировано: 2026-02-03 11:02:02
+# Сгенерировано: 2026-02-09 12:31:00
 # ==========================================
 
 
@@ -30,7 +30,6 @@
 #include "src/utils/DynamicParametersProviderForFullRocketModel.h"
 #include "src/utils/ObjManager/ObjectManager.h"
 #include "src/utils/SimulationConfig.h"
-#include <cmath>
 
 auto loadDataTable = [](const std::string& filename) {
     try {
@@ -44,32 +43,8 @@ auto loadDataTable = [](const std::string& filename) {
 
 int main() {
     try {
-        // === ЗАГРУЗКА КОНФИГУРАЦИИ СИМУЛЯЦИИ ИЗ JSON ===
-        // Попробуем несколько путей к конфигу
-        std::vector<std::string> config_paths = {
-            "config/simulation.json",           // Из корня проекта
-            "../config/simulation.json",       // Из build директории
-            "../../config/simulation_build.json"     // Из Release/Debug поддиректории
-        };
-        
-        SimulationConfig config;
-        bool config_loaded = false;
-        
-        for (const auto& path : config_paths) {
-            try {
-                config = SimulationConfig::loadFromJsonFile(path);
-                config_loaded = true;
-                std::cout << "Config loaded from: " << path << std::endl;
-                break;
-            } catch (const std::exception&) {
-                // Попробуем следующий путь
-                continue;
-            }
-        }
-        
-        if (!config_loaded) {
-            throw std::runtime_error("Cannot find simulation config file in any of the expected locations");
-        }
+        // === ШАГ 0: ЗАГРУЗКА КОНФИГУРАЦИИ ===
+        auto config = SimulationConfig::loadFromJsonFile("../config/simulation.json");
 
         struct ResourceManager {
             std::shared_ptr<SimpleWorld<GLOBAL_CONFIG::PROJECT_TYPE>> world;
@@ -125,7 +100,7 @@ int main() {
         auto Iyy_data = loadDataTable(config.Iyy_path);
         auto Izz_data = loadDataTable(config.Izz_path);
 
-        // === ШАГ 4: КРИТИЧЕСКИ ВАЖНО — СНАЧАЛА СОЗДАТЬ И ИНИЦИАЛИЗИРОВАТЬ МЕНЕДЖЕР ===
+        // === ШАГ 4:СОЗДАТЬ И ИНИЦИАЛИЗИРОВАТЬ интерполятор ===
         resource_manager.golubka_V1_interp_mgr = std::make_shared<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
         resource_manager.golubka_V1_interp_mgr->setThrust(
             std::move(Thrust_x_t_data),
@@ -140,9 +115,9 @@ int main() {
             std::move(Izz_data)
         );
 
-        // === ШАГ 5: ТОЛЬКО ТЕПЕРЬ МОЖНО СОЗДАВАТЬ ПРОВАЙДЕР (менеджер уже существует!) ===
+        // === ШАГ 5:ТЕПЕРЬ МОЖНО СОЗДАВАТЬ ПРОВАЙДЕР (менеджер уже существует!) ===
         auto paramsProvider = std::make_shared<DynamicParametersProviderForFullRocketModel<GLOBAL_CONFIG::PROJECT_TYPE>>(
-            resource_manager.golubka_V1_interp_mgr  // ← shared_ptr живёт в resource_manager!
+            resource_manager.golubka_V1_interp_mgr
         );
 
         // === ШАГ 6: ЗАПОЛНЕНИЕ АЭРОДИНАМИЧЕСКИХ ПАРАМЕТРОВ ===
@@ -207,7 +182,7 @@ int main() {
         resource_manager.manager = std::make_shared<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
         auto golubka_V1_ID = resource_manager.manager->addTrackedObject(resource_manager.golubka_V1);
 
-        // === ШАГ 11: КОЛБЭК С ПРОВЕРКОЙ ВЫСОТЫ ===
+        // === ШАГ 11: КОЛБЭК С ПРОВЕРКОЙ ВЫСОТЫ (пока что он будет тут) ===
         auto continue_callback = [golubka_V1_ID, config](
             const std::shared_ptr<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>& object_manager, const GLOBAL_CONFIG::PROJECT_TYPE current_time
         ) -> bool {
@@ -215,7 +190,8 @@ int main() {
             if (!obj || !obj->isActive()) return false;
             if (current_time > config.max_time) return false;
             const auto& state = obj->getStateSnapshot();
-            return state.getPosition().z() >= 0.0f;  // Остановка при ударе о землю
+            const auto height = state.getPosition().z();
+            return height >= -0.1f;  // Остановка при ударе о землю
         };
 
 
@@ -238,7 +214,7 @@ int main() {
             std::move(resource_manager.describer),
             resource_manager.manager,
             std::move(continue_callback),
-            static_cast<GLOBAL_CONFIG::PROJECT_TYPE>(config.time_step)
+            config.time_step
         );
 
         model.run();
@@ -343,17 +319,17 @@ add_executable(CoreLayer main.cpp
         src/PhysicalObjects/SimpleObject/SimpleObject.cpp
         src/PhysicalObjects/SimpleObject/SimpleObject.h
         src/utils/Interpolation/ComponentInterpolationManager.h
-        src/utils/ConeDirection/ConeDirection.cpp
-        src/utils/ConeDirection/ConeDirection.h
         src/utils/DynamicParametersProviderForFullRocketModel.h
         src/utils/ObjManager/IObjectManager.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/IAeroModel.h
         src/DynamicsSystem/ExtensionModels/Aerodinamics/SimpleAeroModel.h
-        src/utils/KinematicState.h
-        src/utils/KinematicState.cpp
+        src/utils/KinematicState/KinematicState.h
+        src/utils/KinematicState/KinematicState.cpp
         src/utils/SimulationConfig.cpp
         src/utils/SimulationConfig.h
         src/utils/IParameterProvider.h
+        src/utils/KinematicStateDerivative/KinematicStateDerivative.cpp
+        src/utils/KinematicStateDerivative/KinematicStateDerivative.h
 )
 
 # Add tests subdirectory
@@ -496,7 +472,7 @@ namespace PhysicsConstants {
 #include <memory>
 
 namespace GLOBAL_CONFIG {
-    using PROJECT_TYPE = float;
+    using PROJECT_TYPE = double;
     template<typename ObjectTypeManager>
     using STOP_SOLVE_FUNC_TYPE = std::function<bool(const std::shared_ptr<ObjectTypeManager>&,const GLOBAL_CONFIG::PROJECT_TYPE)>;
 }
@@ -555,6 +531,7 @@ private:
 #pragma once
 //библа
 #include "Eigen/Dense"
+#include <Eigen/Geometry>
 
 #include <vector>
 #include <memory>
@@ -575,6 +552,7 @@ private:
 #include <mutex>
 #include <stdexcept>
 #include <iostream>
+#include <stdexcept>
 
 ```
 
@@ -1011,9 +989,32 @@ public:
 ```cpp
 #pragma once
 #include "../IDynamicsSystem.h"
-#include "../../utils/ConeDirection/ConeDirection.h"
+#include "../../../include/math/FlightMath.h"
 #include "../../utils/DynamicParametersProviderForFullRocketModel.h"
 #include "../../WorldModel/AbstractWorldModel.h"
+
+/**
+ * CONVENTION (ENU - East-North-Up):
+ *
+ * Earth frame (ENU):
+ *   X_e → East  (горизонтально вправо)
+ *   Y_e → North (горизонтально вперёд)
+ *   Z_e ↑ Up    (вертикально вверх) ← КЛЮЧЕВОЙ ПРИЗНАК ENU
+ *   Gravity: (0, 0, -mg)
+ *
+ * Body frame (связанная СК ракеты):
+ *   X_b → Nose (нос ракеты)
+ *   Y_b → Right wing (правый борт)
+ *   Z_b ↓ Down (вниз, для правой системы: X × Y = Z)
+ *
+ * Euler angles vector: [psi, theta, gamma]
+ *   euler[0] = psi   (yaw/курс)   — поворот вокруг Z_e
+ *   euler[1] = theta (pitch/тангаж) — поворот вокруг Y'
+ *   euler[2] = gamma (roll/крен)   — поворот вокруг X''
+ *
+ * Rotation sequence: 3-2-1 (ZYX)
+ *   R_body_to_earth = Rz(psi) · Ry(theta) · Rx(gamma)
+ */
 
 /**
  * \brief Full 6DOF rigid body dynamics system for rockets/aircraft.
@@ -1035,60 +1036,47 @@ private:
 
 public:
     explicit FullRocketODE(
-        const std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
-        const std::shared_ptr<AbstractWorldModel<metricType>> world
+        std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
+        std::shared_ptr<AbstractWorldModel<metricType>> world
     );
 
     std::string get_description() const override;
 
-    std::unique_ptr<KinematicState<metricType>> get_rhs_derivatives(
-        const KinematicState<metricType>& kinematics,
+    std::unique_ptr<KinematicStateDerivative<metricType>> get_rhs_derivatives(
+        const KinematicState<metricType>& state,
         metricType t
     ) override;
 
     std::unique_ptr<ObjSnapshot<metricType>> augmentSnapshot(
-        const KinematicState<metricType>& kinematics,
+        const KinematicState<metricType>& state,
         metricType t
     ) const override;
 
 private:
-    // Coordinate frame transformations
-    Eigen::Vector3<metricType> transformVelocityEarthToBody(
-        const Eigen::Vector3<metricType>& V_earth,
-        const Eigen::Vector3<metricType>& euler) const;
 
-    Eigen::Vector3<metricType> transformAccelerationBodyToEarth(
-        const Eigen::Vector3<metricType>& a_body,
-        const Eigen::Vector3<metricType>& V_body,
-        const Eigen::Vector3<metricType>& omega,
-        const Eigen::Vector3<metricType>& euler) const;
-
-    // Physics calculations
     metricType computeSpaceAngleOfAttack(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeAerodynamicRollAngle(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeMachNumber(metricType V_magnitude, const Eigen::Vector3<metricType>& position) const;
     metricType computeAirDensity(const Eigen::Vector3<metricType>& position) const;
     
-    Eigen::Vector3<metricType> computeTotalForces(
-        const Eigen::Vector3<metricType>& F_aero,
-        const Eigen::Vector3<metricType>& F_thrust,
-        metricType mass,
-        const Eigen::Vector3<metricType>& euler) const;
+    Eigen::Vector3<metricType> computeTotalForcesENU(
+    const Eigen::Vector3<metricType>& F_aero_body,
+    const Eigen::Vector3<metricType>& F_thrust_body,
+    metricType mass,
+    const core::math::Matrix3& dcm) const;
 
-    Eigen::Vector3<metricType> computeLinearAccelerationBody(
-        const Eigen::Vector3<metricType>& V_body,
-        const Eigen::Vector3<metricType>& omega,
+    Eigen::Vector3<metricType> computeLinearAccelerationENU(
         const Eigen::Vector3<metricType>& F_sum,
         metricType mass) const;
 
     Eigen::Vector3<metricType> computeEulerAnglesDerivatives(
         const Eigen::Vector3<metricType>& euler,
-        const Eigen::Vector3<metricType>& omega) const;
+        const Eigen::Vector3<metricType>& angularVelocity) const;
 
     Eigen::Vector3<metricType> computeAngularAccelerationBody(
         const Eigen::Vector3<metricType>& M_sum,
         const Eigen::Vector3<metricType>& inertia,
-        const Eigen::Vector3<metricType>& omega) const;
+        const Eigen::Vector3<metricType>& angularVelocity) const;
 };
 ```
 
@@ -1097,36 +1085,34 @@ private:
 ```cpp
 #pragma once
 #include "../utils/ObjSnapshot.h"
-#include "../utils/KinematicState.h"
+#include "../utils/KinematicState/KinematicState.h"
+#include "utils/KinematicStateDerivative/KinematicStateDerivative.h"
 
 /**
- * \brief Interface for object dynamics systems.
+ * \brief Вычисляет правую часть системы обыкновенных дифференциальных уравнений (ODE).
  * 
- * \tparam metricType Numeric type for calculations.
- * 
- * \details Defines the contract for all dynamics systems in the simulator.
- * Encapsulates computation of differential equation right-hand sides
- * and augmentation of kinematic states with physical parameters.
- * Used by integrators for step-by-step trajectory calculation.
+ * \tparam metricType - Тип данных для метрических величин.
+ * \tparam state - Текущее кинематическое состояние.н.
+ *
+ * \details
  */
 template <typename metricType>
 class IDynamicsSystem {
 public:
     virtual ~IDynamicsSystem() = default;
     
-    virtual std::string get_description() const = 0;
+    [[nodiscard]] virtual std::string get_description() const = 0;
 
-    // Compute derivatives for kinematic state only
-    virtual std::unique_ptr<KinematicState<metricType>> get_rhs_derivatives(
+    virtual std::unique_ptr<KinematicStateDerivative<metricType>> get_rhs_derivatives(
         const KinematicState<metricType>& state,
         metricType t
     ) = 0;
 
-    // Pure function: returns NEW snapshot with additional physical parameters
     virtual std::unique_ptr<ObjSnapshot<metricType>> augmentSnapshot(
-        const KinematicState<metricType>& kinematics,
+        const KinematicState<metricType>& state,
         metricType t
     ) const = 0;
+
 };
 ```
 
@@ -1144,35 +1130,24 @@ public:
         return "Простая кинематическая система: dx/dt = v, dv/dt = 0";
     }
 
-    std::unique_ptr<KinematicState<metricType>> get_rhs_derivatives(
+    std::unique_ptr<KinematicStateDerivative<metricType>> get_rhs_derivatives(
         const KinematicState<metricType>& state,
         metricType /*t*/
     ) override {
         // Только кинематика участвует в РК4
-        return std::make_unique<KinematicState<metricType>>(
-            KinematicState<metricType>::createBuilder()
-                .setPosition(state.getVelocity())      // dx/dt = v
-                .setVelocity(Eigen::Vector3<metricType>::Zero()) // dv/dt = 0
-                .setEulerAngles(Eigen::Vector3<metricType>::Zero())
-                .setAngularVelocity(Eigen::Vector3<metricType>::Zero())
-                .build()
-        );
+        return std::make_unique<KinematicStateDerivative<metricType>>(
+             state.getVelocity(), // dPosition/dt
+             Eigen::Vector3<metricType>::Zero(), // dVelocity/dt
+             state.getAngularVelocity(), // dEulerAngles/dt
+             Eigen::Vector3<metricType>::Zero() // dAngularVelocity/dt
+         );
     }
 
     std::unique_ptr<ObjSnapshot<metricType>> augmentSnapshot(
-        const KinematicState<metricType>& kinematics,
-        metricType /*t*/
-    ) const override {
-        // Параметры остаются постоянными (упрощённая модель)
-        static const metricType default_mass = 1.0f;
-        static const Eigen::Vector3<metricType> default_inertia = Eigen::Vector3<metricType>(1.0f, 1.0f, 1.0f);
-
-        return ObjSnapshot<metricType>::createBuilder(kinematics)
-            .setMass(default_mass)
-            .setInertia(default_inertia)
-            .setTotalForce(Eigen::Vector3<metricType>::Zero())
-            .setTotalMoment(Eigen::Vector3<metricType>::Zero())
-            .buildUnique();
+        const KinematicState<metricType>& state,
+        metricType t
+    ) override {
+        return std::make_unique<ObjSnapshot<metricType>>(state, t);
     }
 };
 ```
@@ -1233,7 +1208,7 @@ protected:
 #pragma once
 #include "PCH.h"
 #include "../ODESolver.h"
-#include "../../utils/KinematicState.h"  // ← НОВАЯ ЗАВИСИМОСТЬ
+#include "../../utils/KinematicStateDerivative/KinematicStateDerivative.h"
 
 /**
  * \brief Четвёртый порядок метода Рунге–Кутты для интегрирования систем ОДУ.
@@ -1249,7 +1224,7 @@ protected:
 template <typename metricType, typename CallbackType>
 class RungeKutta4Solver final : public ODESolver<metricType, CallbackType> {
 public:
-    RungeKutta4Solver() = default;  // Конструктор по умолчанию
+    RungeKutta4Solver() = default;
     
     void solve(
         std::shared_ptr<IObjectManager<metricType>> object_manager,
@@ -1264,7 +1239,7 @@ private:
         const ObjSnapshot<metricType>& current_snapshot,
         metricType current_time,
         metricType step_size,
-        IDynamicsSystem<metricType>* sys  // Изменено: принимаем сырой указатель для наблюдения
+        IDynamicsSystem<metricType>* sys
     );
 };
 
@@ -1313,7 +1288,19 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                     auto new_state = solveOneStepForOneObj(
                         current_state, current_time, step_size, object->getDynamicSys()
                     );
-                    momento.addSnapshotByID(id, std::move(new_state));
+                    // Создаём копию для momento перед перемещением
+                    auto new_state_copy = ObjSnapshot<metricType>::createBuilder(new_state->getKinematics())
+                        .setTime(new_state->getTime())
+                        .setMass(new_state->getMass())
+                        .setInertia(new_state->getInertia())
+                        .setTotalForce(new_state->getTotalForce())
+                        .setTotalMoment(new_state->getTotalMoment())
+                        .buildUnique();
+                    
+                    // Обновляем состояние объекта для колбэков
+                    object->updateSnapshot(std::move(new_state));
+                    // Сохраняем копию в momento
+                    momento.addSnapshotByID(id, std::move(new_state_copy));
                 } catch (const std::exception& e) {
                     std::cerr << "Error computing derivatives for object ID " << id
                               << " at time " << current_time << ": " << e.what() << std::endl;
@@ -1999,173 +1986,6 @@ momento->save();#2#
 ```
 
 
-### Файл: src\utils\ConeDirection\ConeDirection.h
-```cpp
-//
-// Created by 4NR_Operator_3 on 25.12.2025.
-//
-
-
-#pragma once
-#include "PCH.h"
-
-/**
- * \brief Интерфейс для трансформаций между системами координат
- *
- * Соглашение углов Эйлера: [theta, psi, gamma] = [тангаж, рыскание, крен]
- */
-template <typename metricType>
-class ConeDirectionInterface {
-public:
-    virtual ~ConeDirectionInterface() = default;
-
-    std::array<metricType, 3> result_getter() const {
-        return result;
-    }
-
-protected:
-    ConeDirectionInterface(metricType theta, metricType psi, metricType gamma,
-                          const std::array<metricType, 3>& vector_param)
-        : theta(theta), psi(psi), gamma(gamma) {}
-
-    virtual std::array<std::array<metricType, 3>, 3> rotation_matrix() = 0;
-
-    std::array<metricType, 3> result = {0, 0, 0};
-    metricType theta;   // тангаж
-    metricType psi;     // рыскание
-    metricType gamma;   // крен
-};
-
-/**
- * \brief Трансформация из связной СК ЛА в земную СК
- *
- * V_earth = L * V_body
- */
-template <typename metricType>
-class Svyaz_to_zemn_Direction : public ConeDirectionInterface<metricType> {
-public:
-    Svyaz_to_zemn_Direction(metricType theta, metricType psi, metricType gamma,
-                           const std::array<metricType, 3>& vector_param)
-        : ConeDirectionInterface<metricType>(theta, psi, gamma, vector_param) {
-
-        auto L = this->Svyaz_to_zemn_Direction<metricType>::rotation_matrix();
-
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                this->result[i] += L[i][j] * vector_param[j];
-            }
-        }
-    }
-
-    ~Svyaz_to_zemn_Direction() override = default;
-
-private:
-    std::array<std::array<metricType, 3>, 3> rotation_matrix() override {
-        metricType cos_psi = std::cos(this->psi);
-        metricType sin_psi = std::sin(this->psi);
-        metricType cos_theta = std::cos(this->theta);
-        metricType sin_theta = std::sin(this->theta);
-        metricType cos_gamma = std::cos(this->gamma);
-        metricType sin_gamma = std::sin(this->gamma);
-
-        return { {
-            {
-                cos_psi * cos_theta,
-                -cos_psi * sin_theta * cos_gamma + sin_psi * sin_gamma,
-                cos_psi * sin_theta * sin_gamma + sin_psi * cos_gamma
-            },
-            {
-                sin_theta,
-                cos_theta * cos_gamma,
-                -cos_theta * sin_gamma
-            },
-            {
-                -cos_theta * sin_psi,
-                cos_psi * sin_gamma + sin_theta * sin_psi * cos_gamma,
-                cos_psi * cos_gamma - sin_theta * sin_psi * sin_gamma
-            }
-        }};
-    }
-};
-
-/**
- * \brief Трансформация из земной СК в связную СК ЛА
- *
- * V_body = L^T * V_earth
- */
-template <typename metricType>
-class Zemn_to_svyaz_Direction : public ConeDirectionInterface<metricType> {
-public:
-    Zemn_to_svyaz_Direction(metricType theta, metricType psi, metricType gamma,
-                           const std::array<metricType, 3>& vector_param)
-        : ConeDirectionInterface<metricType>(theta, psi, gamma, vector_param) {
-
-        auto L = this->Zemn_to_svyaz_Direction<metricType>::rotation_matrix();
-
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                this->result[i] += L[i][j] * vector_param[j];
-            }
-        }
-    }
-
-    ~Zemn_to_svyaz_Direction() override = default;
-
-private:
-    std::array<std::array<metricType, 3>, 3> rotation_matrix() override {
-        metricType cos_psi = std::cos(this->psi);
-        metricType sin_psi = std::sin(this->psi);
-        metricType cos_theta = std::cos(this->theta);
-        metricType sin_theta = std::sin(this->theta);
-        metricType cos_gamma = std::cos(this->gamma);
-        metricType sin_gamma = std::sin(this->gamma);
-
-        return { {
-            {
-                cos_psi * cos_theta,
-                sin_theta,
-                -cos_theta * sin_psi
-            },
-            {
-                -cos_psi * sin_theta * cos_gamma + sin_psi * sin_gamma,
-                cos_theta * cos_gamma,
-                cos_psi * sin_gamma + sin_theta * sin_psi * cos_gamma
-            },
-            {
-                cos_psi * sin_theta * sin_gamma + sin_psi * cos_gamma,
-                -cos_theta * sin_gamma,
-                cos_psi * cos_gamma - sin_theta * sin_psi * sin_gamma
-            }
-        }};
-    }
-};
-
-/**
- * \brief Factory для создания трансформаций
- */
-template <typename metricType>
-class TransformationFactory {
-public:
-    static std::unique_ptr<Svyaz_to_zemn_Direction<metricType>>
-    createBodyToEarthTransform(
-        metricType theta, metricType psi, metricType gamma,
-        const std::array<metricType, 3>& vector) {
-        return std::make_unique<Svyaz_to_zemn_Direction<metricType>>(
-            theta, psi, gamma, vector);
-    }
-
-    static std::unique_ptr<Zemn_to_svyaz_Direction<metricType>>
-    createEarthToBodyTransform(
-        metricType theta, metricType psi, metricType gamma,
-        const std::array<metricType, 3>& vector) {
-        return std::make_unique<Zemn_to_svyaz_Direction<metricType>>(
-            theta, psi, gamma, vector);
-    }
-};
-
-```
-
-
 ### Файл: src\utils\ContinuationCallback.h
 ```cpp
 //
@@ -2179,13 +1999,14 @@ public:
 
 
 inline bool isMainRocketActive(const std::shared_ptr<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>> &object_manager, const int mainRocID) {
-    const auto obj = object_manager->getObjectByID(mainRocID);
-    if (!obj || !obj->isActive()) return false;
-    const auto& state = obj->getStateSnapshot();
-    return state.getPosition().z() >= 0.0f; // Остановка при ударе о землю
+    if (const auto obj = object_manager->getObjectByID(mainRocID); !obj || !obj->isActive()) return false;
+    /*const auto& state = obj->getStateSnapshot();
+    return state.getPosition().z() >= 0.0f; // Остановка при ударе о землю*/
+    return true;
 }
 
 // можно через фабрику сделать, чтобы условия были кастомными.
+
 ```
 
 
@@ -2878,7 +2699,7 @@ public:
 ```
 
 
-### Файл: src\utils\KinematicState.h
+### Файл: src\utils\KinematicState\KinematicState.h
 ```cpp
 #pragma once
 #include "PCH.h"
@@ -2919,6 +2740,17 @@ public:
     [[nodiscard]] const Eigen::Vector3<metricType>& getEulerAngles() const;
     [[nodiscard]] const Eigen::Vector3<metricType>& getAngularVelocity() const;
 
+    // === ENU-SPECIFIC ACCESSORS ===
+    // Position components in ENU coordinates
+    [[nodiscard]] metricType getEast() const { return position_.x(); }
+    [[nodiscard]] metricType getNorth() const { return position_.y(); }
+    [[nodiscard]] metricType getAltitude() const { return position_.z(); }
+    
+    // Velocity components in ENU coordinates
+    [[nodiscard]] metricType getVelocityEast() const { return velocity_.x(); }
+    [[nodiscard]] metricType getVelocityNorth() const { return velocity_.y(); }
+    [[nodiscard]] metricType getVelocityUp() const { return velocity_.z(); }
+
     // === АРИФМЕТИЧЕСКИЕ ОПЕРАТОРЫ ДЛЯ РК4 ===
     KinematicState operator+(const KinematicState& other) const;
     KinematicState operator*(metricType scalar) const;
@@ -2940,7 +2772,96 @@ private:
 
 // Глобальный оператор скаляр * состояние (для симметрии)
 template<typename metricType>
-inline KinematicState<metricType> operator*(metricType scalar, const KinematicState<metricType>& state);
+KinematicState<metricType> operator*(metricType scalar, const KinematicState<metricType>& state);
+```
+
+
+### Файл: src\utils\KinematicStateDerivative\KinematicStateDerivative.h
+```cpp
+#pragma once
+#include "PCH.h"
+
+template<typename metricType>
+class KinematicState;
+/**
+ * @brief Тип для представления производной кинематического состояния.
+ *
+ * Этот класс представляет собой производную по времени от кинематического состояния (KinematicState),
+ * то есть [dx/dt, dv/dt, deuler/dt, dAngVel/dt].
+ * Он отделен от KinematicState для обеспечения типовой безопасности.
+ */
+template<typename metricType>
+class KinematicStateDerivative {
+public:
+    KinematicStateDerivative(
+        Eigen::Vector3<metricType> dPosition,
+        Eigen::Vector3<metricType> dVelocity,
+        Eigen::Vector3<metricType> dEulerAngles,
+        Eigen::Vector3<metricType> dAngularVelocity
+    ) : dPosition_(std::move(dPosition)),
+        dVelocity_(std::move(dVelocity)),
+        dEulerAngles_(std::move(dEulerAngles)),
+        dAngularVelocity_(std::move(dAngularVelocity)) {}
+
+    [[nodiscard]] const Eigen::Vector3<metricType>& getDPosition() const { return dPosition_; }
+    [[nodiscard]] const Eigen::Vector3<metricType>& getDVelocity() const { return dVelocity_; }
+    [[nodiscard]] const Eigen::Vector3<metricType>& getDEulerAngles() const { return dEulerAngles_; }
+    [[nodiscard]] const Eigen::Vector3<metricType>& getDAngularVelocity() const { return dAngularVelocity_; }
+
+    void setDPosition(const Eigen::Vector3<metricType>& pos) { dPosition_ = pos; }
+    void setDVelocity(const Eigen::Vector3<metricType>& vel) { dVelocity_ = vel; }
+    void setDEulerAngles(const Eigen::Vector3<metricType>& angles) { dEulerAngles_ = angles; }
+    void setDAngularVelocity(const Eigen::Vector3<metricType>& angVel) { dAngularVelocity_ = angVel; }
+
+
+    KinematicStateDerivative operator+(const KinematicStateDerivative& other) const {
+        return KinematicStateDerivative(
+            dPosition_ + other.dPosition_,
+            dVelocity_ + other.dVelocity_,
+            dEulerAngles_ + other.dEulerAngles_,
+            dAngularVelocity_ + other.dAngularVelocity_
+        );
+    }
+
+    KinematicStateDerivative operator*(metricType scalar) const {
+        return KinematicStateDerivative(
+            dPosition_ * scalar,
+            dVelocity_ * scalar,
+            dEulerAngles_ * scalar,
+            dAngularVelocity_ * scalar
+        );
+    }
+
+    friend KinematicStateDerivative operator*(metricType scalar, const KinematicStateDerivative& deriv) {
+         return deriv * scalar;
+    }
+
+    friend KinematicState<metricType> operator+(const KinematicState<metricType>& state, const KinematicStateDerivative<metricType>& deriv_scaled) {
+         // Предполагается, что deriv_scaled уже умножена на шаг времени
+         return KinematicState<metricType>::createBuilder()
+             .setPosition(state.getPosition() + deriv_scaled.dPosition_)
+             .setVelocity(state.getVelocity() + deriv_scaled.dVelocity_)
+             .setEulerAngles(state.getEulerAngles() + deriv_scaled.dEulerAngles_)
+             .setAngularVelocity(state.getAngularVelocity() + deriv_scaled.dAngularVelocity_)
+             .build();
+    }
+
+    friend KinematicState<metricType>& operator+=(KinematicState<metricType>& state, const KinematicStateDerivative<metricType>& deriv) {
+         state.setPosition(state.getPosition() + deriv.dPosition_);
+         state.setVelocity(state.getVelocity() + deriv.dVelocity_);
+         state.setEulerAngles(state.getEulerAngles() + deriv.dEulerAngles_);
+         state.setAngularVelocity(state.getAngularVelocity() + deriv.dAngularVelocity_);
+         return state;
+    }
+
+private:
+    Eigen::Vector3<metricType> dPosition_;
+    Eigen::Vector3<metricType> dVelocity_;
+    Eigen::Vector3<metricType> dEulerAngles_;
+    Eigen::Vector3<metricType> dAngularVelocity_;
+};
+
+
 ```
 
 
@@ -3083,7 +3004,7 @@ public:
 ```cpp
 #pragma once
 #include "PCH.h"
-#include "KinematicState.h"  // ← НОВАЯ ЗАВИСИМОСТЬ
+#include "KinematicState/KinematicState.h"  // ← НОВАЯ ЗАВИСИМОСТЬ
 
 /**
  * \brief Полный снимок состояния объекта (кинематика + параметры)
@@ -3111,8 +3032,6 @@ public:
     [[nodiscard]] const Eigen::Vector3<metricType>& getInertia() const;
     [[nodiscard]] const Eigen::Vector3<metricType>& getTotalForce() const;
     [[nodiscard]] const Eigen::Vector3<metricType>& getTotalMoment() const;
-    [[nodiscard]] const Eigen::Vector3<metricType>& getTotalForceEarth() const;
-    [[nodiscard]] const Eigen::Vector3<metricType>& getTotalMomentEarth() const;
 
     // === ДОСТУП К КИНЕМАТИКЕ ===
     [[nodiscard]] const KinematicState<metricType>& getKinematics() const;
@@ -3126,8 +3045,7 @@ public:
         Eigen::Vector3<metricType> inertia_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
         Eigen::Vector3<metricType> totalForce_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
         Eigen::Vector3<metricType> totalMoment_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
-        Eigen::Vector3<metricType> totalForceEarth_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
-        Eigen::Vector3<metricType> totalMomentEarth_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
+
     public:
         explicit Builder(const KinematicState<metricType>& kinematics) : kinematics_(kinematics) {}
         static Builder fromKinematics(const KinematicState<metricType>& kinematics) {
@@ -3138,8 +3056,6 @@ public:
         Builder& setInertia(const Eigen::Vector3<metricType>& i);
         Builder& setTotalForce(const Eigen::Vector3<metricType>& f);
         Builder& setTotalMoment(const Eigen::Vector3<metricType>& m);
-        Builder& setTotalForceEarth(const Eigen::Vector3<metricType>& f);
-        Builder& setTotalMomentEarth(const Eigen::Vector3<metricType>& m);
         [[nodiscard]] std::unique_ptr<ObjSnapshot<metricType>> buildUnique() const;
     };
     static Builder createBuilder(const KinematicState<metricType>& kinematics);
@@ -3148,14 +3064,12 @@ public:
     [[nodiscard]] std::map<std::string, metricType> getParams() const;
 
 private:
-    KinematicState<metricType> kinematics_;  // ← ЕДИНСТВЕННОЕ ИЗМЕНЕНИЕ СТРУКТУРЫ
+    KinematicState<metricType> kinematics_;
     metricType time_;
     metricType mass_;
     Eigen::Vector3<metricType> inertia_;
     Eigen::Vector3<metricType> totalForce_;
     Eigen::Vector3<metricType> totalMoment_;
-    Eigen::Vector3<metricType> totalForceEarth_;
-    Eigen::Vector3<metricType> totalMomentEarth_;
 };
 ```
 
@@ -3180,15 +3094,15 @@ struct SimulationConfigRocketInit {
 };
 
 struct SimulationConfig {
-    std::string operator_name{"undefined"};
-    std::string ode_solver{"undefined"};
-    std::string world_config{"undefined"};
-    std::string data_saver{"undefined"};
-    std::string earth_type{"undefined"};
+    std::string operator_name;
+    std::string ode_solver;
+    std::string world_config;
+    std::string data_saver;
+    std::string earth_type;
 
-    float time_step{0.01f};
-    float max_time{2.0f};
-    std::string output_csv{"../results_data/simulation_data.csv"};
+    float time_step;  // Разумное значение по умолчанию
+    float max_time;    // Минимальное разумное значение
+    std::string output_csv;
 
     // Пути к табличным данным
     std::string thrust_x_path;
@@ -3630,56 +3544,62 @@ std::string FullRocketODE<metricType>::get_description() const {
 }
 
 template <typename metricType>
-std::unique_ptr<KinematicState<metricType>> FullRocketODE<metricType>::get_rhs_derivatives(
-    const KinematicState<metricType>& kinematics,
+std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>::get_rhs_derivatives(
+    const KinematicState<metricType>& state,
     metricType t
 ) {
     auto params_provider = params_provider_.lock();
     if (!params_provider) {
-        throw std::runtime_error("DynamicParametersProvider has been destroyed");
+        throw std::runtime_error("DynamicParametersProvider уже был уничтожен");
     }
-    
-    metricType mass = params_provider->getMass(t);
+        metricType mass = params_provider->getMass(t);
     auto inertia = params_provider->getInertia(t);
 
-    const auto& V_earth = kinematics.getVelocity();
-    const auto& euler = kinematics.getEulerAngles();
-    auto V_body = transformVelocityEarthToBody(V_earth, euler);
+    const auto& V_ENU = state.getVelocity();
+    const auto& euler = state.getEulerAngles();
+    
+    // euler(0) = psi (yaw), euler(1) = theta (pitch) , euler(2) = gamma (roll)
+    auto euler_angles = core::math::EulerAngles::ZYX(euler(0), euler(1), euler(2));
+    const auto dcm = core::math::eulerToDCM(euler_angles, core::math::CoordinateFrame::ENU);
+    auto V_body = core::math::rotateVector(V_ENU, dcm, core::math::CoordinateFrame::ENU, false); // body_to_enu = false, так как матрицу нужно траснспонировать
 
-    const auto& omega = kinematics.getAngularVelocity();
-
-    // Compute aerodynamic forces and moments
+    const auto& angularVelocity = state.getAngularVelocity();
+    // тут стопрацентная ошибка у нас, так как поменяли системы координат
     metricType alpha_p = computeSpaceAngleOfAttack(V_body);
     metricType phi_p = computeAerodynamicRollAngle(V_body);
     metricType mach = computeMachNumber(V_body.norm(), Eigen::Vector3<metricType>::Zero()); // TODO: pass real position
-    metricType rho = computeAirDensity(Eigen::Vector3<metricType>::Zero()); // TODO: pass real position
+    metricType rho = computeAirDensity(state.getPosition());
 
     auto aero_model = params_provider->getAeroModel();
+    /*
     auto aero_forces_body = aero_model->computeAerodynamicForces(V_body, rho, mach);
     auto aero_moments_body = aero_model->computeAerodynamicMoments(V_body, omega, rho, mach, euler);
+    */
 
-    last_computed_forces_ = aero_forces_body;
-    last_computed_moments_ = aero_moments_body;
+    auto aero_forces_body = Eigen::Vector3<metricType>::Zero();
+    auto aero_moments_body = Eigen::Vector3<metricType>::Zero();
+
+
+
 
     auto thrust_body = params_provider->getThrust(t);
+    //auto thrust_body = Eigen::Vector3<metricType>::Zero();
+    // Thrust is correct at the beginning, just check forces for coordinate system
+    auto F_sum_ENU = computeTotalForcesENU(aero_forces_body, thrust_body, mass, dcm);
+    last_computed_forces_ = F_sum_ENU;
 
-    auto F_sum_body = computeTotalForces(aero_forces_body, thrust_body, mass, euler);
-    last_computed_forces_ = F_sum_body;
+    auto dV_ENU = computeLinearAccelerationENU(F_sum_ENU, mass);
+    auto dEuler_dt = computeEulerAnglesDerivatives(euler, angularVelocity);
+    auto dAngularVelocity_dt = computeAngularAccelerationBody(aero_moments_body, inertia, angularVelocity);
 
-    // Compute derivatives
-    auto dV_body_dt = computeLinearAccelerationBody(V_body, omega, F_sum_body, mass);
-    auto dV_earth_dt = transformAccelerationBodyToEarth(dV_body_dt, V_body, omega, euler);
-    auto dEuler_dt = computeEulerAnglesDerivatives(euler, omega);
-    auto dOmega_dt = computeAngularAccelerationBody(aero_moments_body, inertia, omega);
-
-    return std::make_unique<KinematicState<metricType>>(
-        KinematicState<metricType>::createBuilder()
-            .setPosition(kinematics.getVelocity())  // dx/dt = v
-            .setVelocity(dV_earth_dt)               // dv/dt = computed acceleration
-            .setEulerAngles(dEuler_dt)              // dEuler/dt
-            .setAngularVelocity(dOmega_dt)          // dOmega/dt
-            .build()
+    return std::make_unique<KinematicStateDerivative<metricType>>(
+            V_ENU,  // dPosition/dt = Velocity
+            dV_ENU,               // dVelocity/dt = Acceleration
+            dEuler_dt,              // dEuler/dt
+            dAngularVelocity_dt          // dАngularVelocity/dt
     );
+
+
 }
 
 template <typename metricType>
@@ -3688,29 +3608,7 @@ std::unique_ptr<ObjSnapshot<metricType>> FullRocketODE<metricType>::augmentSnaps
     metricType t
 ) const {
     auto params_provider = params_provider_.lock();
-    if (!params_provider) {
-        throw std::runtime_error("DynamicParametersProvider expired in augmentSnapshot");
-    }
-
-    // Transform forces and moments from body to earth frame for logging
-    const auto& euler = kinematics.getEulerAngles();
-    std::array<metricType, 3> F_body_arr = {
-        last_computed_forces_.x(),
-        last_computed_forces_.y(),
-        last_computed_forces_.z()
-    };
-    auto F_earth_arr = TransformationFactory<metricType>::createBodyToEarthTransform(
-        euler.x(), euler.y(), euler.z(), F_body_arr)->result_getter();
-    Eigen::Vector3<metricType> F_earth(F_earth_arr[0], F_earth_arr[1], F_earth_arr[2]);
-
-    std::array<metricType, 3> M_body_arr = {
-        last_computed_moments_.x(),
-        last_computed_moments_.y(),
-        last_computed_moments_.z()
-    };
-    auto M_earth_arr = TransformationFactory<metricType>::createBodyToEarthTransform(
-        euler.x(), euler.y(), euler.z(), M_body_arr)->result_getter();
-    Eigen::Vector3<metricType> M_earth(M_earth_arr[0], M_earth_arr[1], M_earth_arr[2]);
+    if (!params_provider) {throw std::runtime_error("DynamicParametersProvider expired in augmentSnapshot");}
 
     return ObjSnapshot<metricType>::createBuilder(kinematics)
         .setTime(t)
@@ -3718,36 +3616,11 @@ std::unique_ptr<ObjSnapshot<metricType>> FullRocketODE<metricType>::augmentSnaps
         .setInertia(params_provider->getInertia(t))
         .setTotalForce(last_computed_forces_)
         .setTotalMoment(last_computed_moments_)
-        .setTotalForceEarth(F_earth)
-        .setTotalMomentEarth(M_earth)
-        .buildUnique();
+            .buildUnique();
 }
 
-template <typename metricType>
-Eigen::Vector3<metricType> FullRocketODE<metricType>::transformVelocityEarthToBody(
-    const Eigen::Vector3<metricType>& V_earth,
-    const Eigen::Vector3<metricType>& euler) const
-{
-    std::array<metricType, 3> V_earth_array = {V_earth(0), V_earth(1), V_earth(2)};
-    auto transform = std::make_unique<Zemn_to_svyaz_Direction<metricType>>(
-        euler(0), euler(1), euler(2), V_earth_array);
-    auto result = transform->result_getter();
-    return Eigen::Vector3<metricType>(result[0], result[1], result[2]);
-}
 
-template <typename metricType>
-Eigen::Vector3<metricType> FullRocketODE<metricType>::transformAccelerationBodyToEarth(
-    const Eigen::Vector3<metricType>& a_body,
-    const Eigen::Vector3<metricType>& V_body,
-    const Eigen::Vector3<metricType>& omega,
-    const Eigen::Vector3<metricType>& euler) const
-{
-    std::array<metricType, 3> a_body_array = {a_body(0), a_body(1), a_body(2)};
-    auto transform = std::make_unique<Svyaz_to_zemn_Direction<metricType>>(
-        euler(0), euler(1), euler(2), a_body_array);
-    auto result = transform->result_getter();
-    return Eigen::Vector3<metricType>(result[0], result[1], result[2]);
-}
+
 
 template <typename metricType>
 metricType FullRocketODE<metricType>::computeSpaceAngleOfAttack(const Eigen::Vector3<metricType>& V_body) const {
@@ -3788,66 +3661,52 @@ metricType FullRocketODE<metricType>::computeAirDensity(const Eigen::Vector3<met
 }
 
 template <typename metricType>
-Eigen::Vector3<metricType> FullRocketODE<metricType>::computeTotalForces(
-    const Eigen::Vector3<metricType>& F_aero,
-    const Eigen::Vector3<metricType>& F_thrust,
+Eigen::Vector3<metricType> FullRocketODE<metricType>::computeTotalForcesENU(
+    const Eigen::Vector3<metricType>& F_aero_body,
+    const Eigen::Vector3<metricType>& F_thrust_body,
     metricType mass,
-    const Eigen::Vector3<metricType>& euler) const
+    const core::math::Matrix3& dcm) const
 {
-    std::array<metricType, 3> gravity_array = {0, -mass * PhysicsConstants::g, 0};
-    auto gravity_transform = std::make_unique<Zemn_to_svyaz_Direction<metricType>>(
-        euler(0), euler(1), euler(2), gravity_array);
-    auto gravity_body_array = gravity_transform->result_getter();
-    Eigen::Vector3<metricType> gravity_body(
-        gravity_body_array[0], gravity_body_array[1], gravity_body_array[2]);
-    return F_aero + F_thrust + gravity_body;
+    // Gravity force in ENU (Z up -> -mg)
+    Eigen::Vector3<metricType> gravity_ENU(0, 0, -mass * PhysicsConstants::g);
+
+    // Transform aerodynamic and thrust forces from body to ENU
+    auto F_aero_ENU = core::math::rotateVector(F_aero_body, dcm, core::math::CoordinateFrame::ENU, true);
+    auto F_thrust_ENU = core::math::rotateVector(F_thrust_body, dcm, core::math::CoordinateFrame::ENU, true);
+
+    // Sum all forces in ENU
+    return F_aero_ENU + F_thrust_ENU + gravity_ENU;
 }
 
 template <typename metricType>
-Eigen::Vector3<metricType> FullRocketODE<metricType>::computeLinearAccelerationBody(
-    const Eigen::Vector3<metricType>& V_body,
-    const Eigen::Vector3<metricType>& omega,
+Eigen::Vector3<metricType> FullRocketODE<metricType>::computeLinearAccelerationENU(
     const Eigen::Vector3<metricType>& F_sum,
     metricType mass) const
 {
-    metricType v_x = V_body(0), v_y = V_body(1), v_z = V_body(2);
-    metricType w_x = omega(0), w_y = omega(1), w_z = omega(2);
     Eigen::Vector3<metricType> dV_dt;
-    dV_dt(0) = -w_y * v_z + w_z * v_y + F_sum(0) / mass;
-    dV_dt(1) = -w_z * v_x + w_x * v_z + F_sum(1) / mass;
-    dV_dt(2) = -w_x * v_y + w_y * v_x + F_sum(2) / mass;
+    dV_dt(0) = F_sum(0) / mass;
+    dV_dt(1) = F_sum(1) / mass;
+    dV_dt(2) = F_sum(2) / mass;
     return dV_dt;
 }
 
 template <typename metricType>
 Eigen::Vector3<metricType> FullRocketODE<metricType>::computeEulerAnglesDerivatives(
     const Eigen::Vector3<metricType>& euler,
-    const Eigen::Vector3<metricType>& omega) const
+    const Eigen::Vector3<metricType>& angularVelocity) const
 {
-    metricType theta = euler(0);  // pitch
-    metricType psi = euler(1);    // yaw
-    metricType gamma = euler(2);  // roll
-    metricType w_x = omega(0);
-    metricType w_y = omega(1);
-    metricType w_z = omega(2);
-    metricType cos_theta = std::cos(theta);
-    metricType sin_theta = std::sin(theta);
-    metricType cos_gamma = std::cos(gamma);
-    metricType sin_gamma = std::sin(gamma);
-    metricType tan_theta = std::tan(theta);
+    // Use FlightMath library function for Euler rate computation in ENU coordinates
+    // euler(0) = psi (yaw), euler(1) = theta (pitch), euler(2) = gamma (roll)
+    auto euler_angles = core::math::EulerAngles::ZYX(euler(0), euler(1), euler(2));
     
-    Eigen::Vector3<metricType> dEuler_dt;
-    if (std::abs(cos_theta) > 1e-6) {
-        dEuler_dt(1) = (w_y * cos_gamma - w_z * sin_gamma) / cos_theta;  // dPsi/dt
-    } else {
-        dEuler_dt(1) = 0.0;
-    }
-    dEuler_dt(2) = w_x - tan_theta * (w_y * cos_gamma - w_z * sin_gamma);  // dGamma/dt
-    dEuler_dt(0) = w_y * sin_gamma + w_z * cos_gamma;  // dTheta/dt
+    // Convert angular velocity to Euler rates using FlightMath function
+    // This replaces manual matrix math with library function
+    auto dEuler_dt = core::math::angularVelocityToEulerRates(
+        euler_angles, 
+        angularVelocity, 
+        core::math::CoordinateFrame::ENU
+    );
     
-    if (!std::isfinite(dEuler_dt(0)) || !std::isfinite(dEuler_dt(1)) || !std::isfinite(dEuler_dt(2))) {
-        throw std::runtime_error("Non-finite values in Euler angles derivatives");
-    }
     return dEuler_dt;
 }
 
@@ -4003,17 +3862,6 @@ template class AbstractObject<GLOBAL_CONFIG::PROJECT_TYPE>;
 ```
 
 
-### Файл: src\utils\ConeDirection\ConeDirection.cpp
-```cpp
-//
-// Created by 4NR_Operator_3 on 25.12.2025.
-//
-
-#include "ConeDirection.h"
-
-```
-
-
 ### Файл: src\utils\DataTable\DataTable1D\uploader1D_fromTXT.cpp
 ```cpp
 //
@@ -4058,7 +3906,7 @@ template class AbstractObject<GLOBAL_CONFIG::PROJECT_TYPE>;
 ```
 
 
-### Файл: src\utils\KinematicState.cpp
+### Файл: src\utils\KinematicState\KinematicState.cpp
 ```cpp
 #include "PCH.h"
 #include "KinematicState.h"
@@ -4160,6 +4008,17 @@ template KinematicState<GLOBAL_CONFIG::PROJECT_TYPE> operator*(GLOBAL_CONFIG::PR
 ```
 
 
+### Файл: src\utils\KinematicStateDerivative\KinematicStateDerivative.cpp
+```cpp
+//
+// Created by 4NR_Operator_3 on 06.02.2026.
+//
+
+#include "KinematicStateDerivative.h"
+
+```
+
+
 ### Файл: src\utils\ObjSnapshot.cpp
 ```cpp
 #include "PCH.h"
@@ -4172,9 +4031,7 @@ ObjSnapshot<metricType>::ObjSnapshot()
       mass_(std::numeric_limits<metricType>::quiet_NaN()),
       inertia_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())),
       totalForce_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())),
-      totalMoment_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())),
-      totalForceEarth_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())),
-      totalMomentEarth_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())) {}
+      totalMoment_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())){}
 
 // Delegate to kinematics for backward compatibility
 template<typename metricType>
@@ -4222,15 +4079,6 @@ const Eigen::Vector3<metricType>& ObjSnapshot<metricType>::getTotalMoment() cons
     return totalMoment_;
 }
 
-template<typename metricType>
-const Eigen::Vector3<metricType>& ObjSnapshot<metricType>::getTotalForceEarth() const {
-    return totalForceEarth_;
-}
-
-template<typename metricType>
-const Eigen::Vector3<metricType>& ObjSnapshot<metricType>::getTotalMomentEarth() const {
-    return totalMomentEarth_;
-}
 
 template<typename metricType>
 const KinematicState<metricType>& ObjSnapshot<metricType>::getKinematics() const {
@@ -4267,17 +4115,7 @@ typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::set
     return *this;
 }
 
-template<typename metricType>
-typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setTotalForceEarth(const Eigen::Vector3<metricType>& f) {
-    totalForceEarth_ = f;
-    return *this;
-}
 
-template<typename metricType>
-typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setTotalMomentEarth(const Eigen::Vector3<metricType>& m) {
-    totalMomentEarth_ = m;
-    return *this;
-}
 
 template<typename metricType>
 std::unique_ptr<ObjSnapshot<metricType>> ObjSnapshot<metricType>::Builder::buildUnique() const {
@@ -4288,8 +4126,6 @@ std::unique_ptr<ObjSnapshot<metricType>> ObjSnapshot<metricType>::Builder::build
     snapshot->inertia_ = inertia_;
     snapshot->totalForce_ = totalForce_;
     snapshot->totalMoment_ = totalMoment_;
-    snapshot->totalForceEarth_ = totalForceEarth_;
-    snapshot->totalMomentEarth_ = totalMomentEarth_;
     return snapshot;
 }
 
@@ -4324,15 +4160,7 @@ std::map<std::string, metricType> ObjSnapshot<metricType>::getParams() const {
     if (!std::isnan(totalMoment_.x())) params["totalMoment_x"] = totalMoment_.x();
     if (!std::isnan(totalMoment_.y())) params["totalMoment_y"] = totalMoment_.y();
     if (!std::isnan(totalMoment_.z())) params["totalMoment_z"] = totalMoment_.z();
-    
-    // Earth frame forces and moments if available
-    if (!std::isnan(totalForceEarth_.x())) params["totalForceEarth_x"] = totalForceEarth_.x();
-    if (!std::isnan(totalForceEarth_.y())) params["totalForceEarth_y"] = totalForceEarth_.y();
-    if (!std::isnan(totalForceEarth_.z())) params["totalForceEarth_z"] = totalForceEarth_.z();
-    if (!std::isnan(totalMomentEarth_.x())) params["totalMomentEarth_x"] = totalMomentEarth_.x();
-    if (!std::isnan(totalMomentEarth_.y())) params["totalMomentEarth_y"] = totalMomentEarth_.y();
-    if (!std::isnan(totalMomentEarth_.z())) params["totalMomentEarth_z"] = totalMomentEarth_.z();
-    
+
     return params;
 }
 
@@ -4372,26 +4200,26 @@ SimulationConfig SimulationConfig::loadFromJsonFile(const std::string& path) {
     SimulationConfig cfg;
     const auto json = readFileToString(path);
 
+    // Новые строки для описания
+    cfg.operator_name = extractString(json, "operator_name", "");
+    cfg.ode_solver = extractString(json, "ode_solver", "");
+    cfg.world_config = extractString(json, "world_config", "");
+    cfg.data_saver = extractString(json, "data_saver", "");
+    cfg.earth_type = extractString(json, "earth_type", "");
+
+    // Пути к таблицам
+    cfg.thrust_x_path = extractString(json, "thrust_x", "");
+    cfg.thrust_y_path = extractString(json, "thrust_y", "");
+    cfg.thrust_z_path = extractString(json, "thrust_z", "");
+    cfg.mass_path = extractString(json, "mass", "");
+    cfg.Ixx_path = extractString(json, "Ixx", "");
+    cfg.Iyy_path = extractString(json, "Iyy", "");
+    cfg.Izz_path = extractString(json, "Izz", "");
+
     // Глобальные параметры симуляции
     cfg.time_step = extractFloat(json, "time_step", cfg.time_step);
     cfg.max_time = extractFloat(json, "max_time", cfg.max_time);
-    cfg.output_csv = extractString(json, "output_csv", cfg.output_csv);
-
-    // Новые строки для описания
-    cfg.operator_name = extractString(json, "operator_name", cfg.operator_name);
-    cfg.ode_solver = extractString(json, "ode_solver", cfg.ode_solver);
-    cfg.world_config = extractString(json, "world_config", cfg.world_config);
-    cfg.data_saver = extractString(json, "data_saver", cfg.data_saver);
-    cfg.earth_type = extractString(json, "earth_type", cfg.earth_type);
-
-    // Пути к таблицам
-    cfg.thrust_x_path = extractString(json, "thrust_x", cfg.thrust_x_path);
-    cfg.thrust_y_path = extractString(json, "thrust_y", cfg.thrust_y_path);
-    cfg.thrust_z_path = extractString(json, "thrust_z", cfg.thrust_z_path);
-    cfg.mass_path = extractString(json, "mass", cfg.mass_path);
-    cfg.Ixx_path = extractString(json, "Ixx", cfg.Ixx_path);
-    cfg.Iyy_path = extractString(json, "Iyy", cfg.Iyy_path);
-    cfg.Izz_path = extractString(json, "Izz", cfg.Izz_path);
+    cfg.output_csv = extractString(json, "output_csv", "");
 
     // Начальные условия
     cfg.rocket_init.position = extractVec3(json, "position", cfg.rocket_init.position);
@@ -5080,6 +4908,961 @@ std::shared_ptr<MockDynamicsSystem<metricType>> createConstantSystem() {
 ```
 
 
+### Файл: tests\build\CMakeFiles\4.2.3\CompilerIdCXX\CMakeCXXCompilerId.cpp
+```cpp
+/* This source file must have a .cpp extension so that all C++ compilers
+   recognize the extension without flags.  Borland does not know .cxx for
+   example.  */
+#ifndef __cplusplus
+# error "A C compiler has been selected for C++."
+#endif
+
+#if !defined(__has_include)
+/* If the compiler does not have __has_include, pretend the answer is
+   always no.  */
+#  define __has_include(x) 0
+#endif
+
+
+/* Version number components: V=Version, R=Revision, P=Patch
+   Version date components:   YYYY=Year, MM=Month,   DD=Day  */
+
+#if defined(__INTEL_COMPILER) || defined(__ICC)
+# define COMPILER_ID "Intel"
+# if defined(_MSC_VER)
+#  define SIMULATE_ID "MSVC"
+# endif
+# if defined(__GNUC__)
+#  define SIMULATE_ID "GNU"
+# endif
+  /* __INTEL_COMPILER = VRP prior to 2021, and then VVVV for 2021 and later,
+     except that a few beta releases use the old format with V=2021.  */
+# if __INTEL_COMPILER < 2021 || __INTEL_COMPILER == 202110 || __INTEL_COMPILER == 202111
+#  define COMPILER_VERSION_MAJOR DEC(__INTEL_COMPILER/100)
+#  define COMPILER_VERSION_MINOR DEC(__INTEL_COMPILER/10 % 10)
+#  if defined(__INTEL_COMPILER_UPDATE)
+#   define COMPILER_VERSION_PATCH DEC(__INTEL_COMPILER_UPDATE)
+#  else
+#   define COMPILER_VERSION_PATCH DEC(__INTEL_COMPILER   % 10)
+#  endif
+# else
+#  define COMPILER_VERSION_MAJOR DEC(__INTEL_COMPILER)
+#  define COMPILER_VERSION_MINOR DEC(__INTEL_COMPILER_UPDATE)
+   /* The third version component from --version is an update index,
+      but no macro is provided for it.  */
+#  define COMPILER_VERSION_PATCH DEC(0)
+# endif
+# if defined(__INTEL_COMPILER_BUILD_DATE)
+   /* __INTEL_COMPILER_BUILD_DATE = YYYYMMDD */
+#  define COMPILER_VERSION_TWEAK DEC(__INTEL_COMPILER_BUILD_DATE)
+# endif
+# if defined(_MSC_VER)
+   /* _MSC_VER = VVRR */
+#  define SIMULATE_VERSION_MAJOR DEC(_MSC_VER / 100)
+#  define SIMULATE_VERSION_MINOR DEC(_MSC_VER % 100)
+# endif
+# if defined(__GNUC__)
+#  define SIMULATE_VERSION_MAJOR DEC(__GNUC__)
+# elif defined(__GNUG__)
+#  define SIMULATE_VERSION_MAJOR DEC(__GNUG__)
+# endif
+# if defined(__GNUC_MINOR__)
+#  define SIMULATE_VERSION_MINOR DEC(__GNUC_MINOR__)
+# endif
+# if defined(__GNUC_PATCHLEVEL__)
+#  define SIMULATE_VERSION_PATCH DEC(__GNUC_PATCHLEVEL__)
+# endif
+
+#elif (defined(__clang__) && defined(__INTEL_CLANG_COMPILER)) || defined(__INTEL_LLVM_COMPILER)
+# define COMPILER_ID "IntelLLVM"
+#if defined(_MSC_VER)
+# define SIMULATE_ID "MSVC"
+#endif
+#if defined(__GNUC__)
+# define SIMULATE_ID "GNU"
+#endif
+/* __INTEL_LLVM_COMPILER = VVVVRP prior to 2021.2.0, VVVVRRPP for 2021.2.0 and
+ * later.  Look for 6 digit vs. 8 digit version number to decide encoding.
+ * VVVV is no smaller than the current year when a version is released.
+ */
+#if __INTEL_LLVM_COMPILER < 1000000L
+# define COMPILER_VERSION_MAJOR DEC(__INTEL_LLVM_COMPILER/100)
+# define COMPILER_VERSION_MINOR DEC(__INTEL_LLVM_COMPILER/10 % 10)
+# define COMPILER_VERSION_PATCH DEC(__INTEL_LLVM_COMPILER    % 10)
+#else
+# define COMPILER_VERSION_MAJOR DEC(__INTEL_LLVM_COMPILER/10000)
+# define COMPILER_VERSION_MINOR DEC(__INTEL_LLVM_COMPILER/100 % 100)
+# define COMPILER_VERSION_PATCH DEC(__INTEL_LLVM_COMPILER     % 100)
+#endif
+#if defined(_MSC_VER)
+  /* _MSC_VER = VVRR */
+# define SIMULATE_VERSION_MAJOR DEC(_MSC_VER / 100)
+# define SIMULATE_VERSION_MINOR DEC(_MSC_VER % 100)
+#endif
+#if defined(__GNUC__)
+# define SIMULATE_VERSION_MAJOR DEC(__GNUC__)
+#elif defined(__GNUG__)
+# define SIMULATE_VERSION_MAJOR DEC(__GNUG__)
+#endif
+#if defined(__GNUC_MINOR__)
+# define SIMULATE_VERSION_MINOR DEC(__GNUC_MINOR__)
+#endif
+#if defined(__GNUC_PATCHLEVEL__)
+# define SIMULATE_VERSION_PATCH DEC(__GNUC_PATCHLEVEL__)
+#endif
+
+#elif defined(__PATHCC__)
+# define COMPILER_ID "PathScale"
+# define COMPILER_VERSION_MAJOR DEC(__PATHCC__)
+# define COMPILER_VERSION_MINOR DEC(__PATHCC_MINOR__)
+# if defined(__PATHCC_PATCHLEVEL__)
+#  define COMPILER_VERSION_PATCH DEC(__PATHCC_PATCHLEVEL__)
+# endif
+
+#elif defined(__BORLANDC__) && defined(__CODEGEARC_VERSION__)
+# define COMPILER_ID "Embarcadero"
+# define COMPILER_VERSION_MAJOR HEX(__CODEGEARC_VERSION__>>24 & 0x00FF)
+# define COMPILER_VERSION_MINOR HEX(__CODEGEARC_VERSION__>>16 & 0x00FF)
+# define COMPILER_VERSION_PATCH DEC(__CODEGEARC_VERSION__     & 0xFFFF)
+
+#elif defined(__BORLANDC__)
+# define COMPILER_ID "Borland"
+  /* __BORLANDC__ = 0xVRR */
+# define COMPILER_VERSION_MAJOR HEX(__BORLANDC__>>8)
+# define COMPILER_VERSION_MINOR HEX(__BORLANDC__ & 0xFF)
+
+#elif defined(__WATCOMC__) && __WATCOMC__ < 1200
+# define COMPILER_ID "Watcom"
+   /* __WATCOMC__ = VVRR */
+# define COMPILER_VERSION_MAJOR DEC(__WATCOMC__ / 100)
+# define COMPILER_VERSION_MINOR DEC((__WATCOMC__ / 10) % 10)
+# if (__WATCOMC__ % 10) > 0
+#  define COMPILER_VERSION_PATCH DEC(__WATCOMC__ % 10)
+# endif
+
+#elif defined(__WATCOMC__)
+# define COMPILER_ID "OpenWatcom"
+   /* __WATCOMC__ = VVRP + 1100 */
+# define COMPILER_VERSION_MAJOR DEC((__WATCOMC__ - 1100) / 100)
+# define COMPILER_VERSION_MINOR DEC((__WATCOMC__ / 10) % 10)
+# if (__WATCOMC__ % 10) > 0
+#  define COMPILER_VERSION_PATCH DEC(__WATCOMC__ % 10)
+# endif
+
+#elif defined(__SUNPRO_CC)
+# define COMPILER_ID "SunPro"
+# if __SUNPRO_CC >= 0x5100
+   /* __SUNPRO_CC = 0xVRRP */
+#  define COMPILER_VERSION_MAJOR HEX(__SUNPRO_CC>>12)
+#  define COMPILER_VERSION_MINOR HEX(__SUNPRO_CC>>4 & 0xFF)
+#  define COMPILER_VERSION_PATCH HEX(__SUNPRO_CC    & 0xF)
+# else
+   /* __SUNPRO_CC = 0xVRP */
+#  define COMPILER_VERSION_MAJOR HEX(__SUNPRO_CC>>8)
+#  define COMPILER_VERSION_MINOR HEX(__SUNPRO_CC>>4 & 0xF)
+#  define COMPILER_VERSION_PATCH HEX(__SUNPRO_CC    & 0xF)
+# endif
+
+#elif defined(__HP_aCC)
+# define COMPILER_ID "HP"
+  /* __HP_aCC = VVRRPP */
+# define COMPILER_VERSION_MAJOR DEC(__HP_aCC/10000)
+# define COMPILER_VERSION_MINOR DEC(__HP_aCC/100 % 100)
+# define COMPILER_VERSION_PATCH DEC(__HP_aCC     % 100)
+
+#elif defined(__DECCXX)
+# define COMPILER_ID "Compaq"
+  /* __DECCXX_VER = VVRRTPPPP */
+# define COMPILER_VERSION_MAJOR DEC(__DECCXX_VER/10000000)
+# define COMPILER_VERSION_MINOR DEC(__DECCXX_VER/100000  % 100)
+# define COMPILER_VERSION_PATCH DEC(__DECCXX_VER         % 10000)
+
+#elif defined(__IBMCPP__) && defined(__COMPILER_VER__)
+# define COMPILER_ID "zOS"
+  /* __IBMCPP__ = VRP */
+# define COMPILER_VERSION_MAJOR DEC(__IBMCPP__/100)
+# define COMPILER_VERSION_MINOR DEC(__IBMCPP__/10 % 10)
+# define COMPILER_VERSION_PATCH DEC(__IBMCPP__    % 10)
+
+#elif defined(__open_xl__) && defined(__clang__)
+# define COMPILER_ID "IBMClang"
+# define COMPILER_VERSION_MAJOR DEC(__open_xl_version__)
+# define COMPILER_VERSION_MINOR DEC(__open_xl_release__)
+# define COMPILER_VERSION_PATCH DEC(__open_xl_modification__)
+# define COMPILER_VERSION_TWEAK DEC(__open_xl_ptf_fix_level__)
+# define COMPILER_VERSION_INTERNAL_STR  __clang_version__
+
+
+#elif defined(__ibmxl__) && defined(__clang__)
+# define COMPILER_ID "XLClang"
+# define COMPILER_VERSION_MAJOR DEC(__ibmxl_version__)
+# define COMPILER_VERSION_MINOR DEC(__ibmxl_release__)
+# define COMPILER_VERSION_PATCH DEC(__ibmxl_modification__)
+# define COMPILER_VERSION_TWEAK DEC(__ibmxl_ptf_fix_level__)
+
+
+#elif defined(__IBMCPP__) && !defined(__COMPILER_VER__) && __IBMCPP__ >= 800
+# define COMPILER_ID "XL"
+  /* __IBMCPP__ = VRP */
+# define COMPILER_VERSION_MAJOR DEC(__IBMCPP__/100)
+# define COMPILER_VERSION_MINOR DEC(__IBMCPP__/10 % 10)
+# define COMPILER_VERSION_PATCH DEC(__IBMCPP__    % 10)
+
+#elif defined(__IBMCPP__) && !defined(__COMPILER_VER__) && __IBMCPP__ < 800
+# define COMPILER_ID "VisualAge"
+  /* __IBMCPP__ = VRP */
+# define COMPILER_VERSION_MAJOR DEC(__IBMCPP__/100)
+# define COMPILER_VERSION_MINOR DEC(__IBMCPP__/10 % 10)
+# define COMPILER_VERSION_PATCH DEC(__IBMCPP__    % 10)
+
+#elif defined(__NVCOMPILER)
+# define COMPILER_ID "NVHPC"
+# define COMPILER_VERSION_MAJOR DEC(__NVCOMPILER_MAJOR__)
+# define COMPILER_VERSION_MINOR DEC(__NVCOMPILER_MINOR__)
+# if defined(__NVCOMPILER_PATCHLEVEL__)
+#  define COMPILER_VERSION_PATCH DEC(__NVCOMPILER_PATCHLEVEL__)
+# endif
+
+#elif defined(__PGI)
+# define COMPILER_ID "PGI"
+# define COMPILER_VERSION_MAJOR DEC(__PGIC__)
+# define COMPILER_VERSION_MINOR DEC(__PGIC_MINOR__)
+# if defined(__PGIC_PATCHLEVEL__)
+#  define COMPILER_VERSION_PATCH DEC(__PGIC_PATCHLEVEL__)
+# endif
+
+#elif defined(__clang__) && defined(__cray__)
+# define COMPILER_ID "CrayClang"
+# define COMPILER_VERSION_MAJOR DEC(__cray_major__)
+# define COMPILER_VERSION_MINOR DEC(__cray_minor__)
+# define COMPILER_VERSION_PATCH DEC(__cray_patchlevel__)
+# define COMPILER_VERSION_INTERNAL_STR __clang_version__
+
+
+#elif defined(_CRAYC)
+# define COMPILER_ID "Cray"
+# define COMPILER_VERSION_MAJOR DEC(_RELEASE_MAJOR)
+# define COMPILER_VERSION_MINOR DEC(_RELEASE_MINOR)
+
+#elif defined(__TI_COMPILER_VERSION__)
+# define COMPILER_ID "TI"
+  /* __TI_COMPILER_VERSION__ = VVVRRRPPP */
+# define COMPILER_VERSION_MAJOR DEC(__TI_COMPILER_VERSION__/1000000)
+# define COMPILER_VERSION_MINOR DEC(__TI_COMPILER_VERSION__/1000   % 1000)
+# define COMPILER_VERSION_PATCH DEC(__TI_COMPILER_VERSION__        % 1000)
+
+#elif defined(__CLANG_FUJITSU)
+# define COMPILER_ID "FujitsuClang"
+# define COMPILER_VERSION_MAJOR DEC(__FCC_major__)
+# define COMPILER_VERSION_MINOR DEC(__FCC_minor__)
+# define COMPILER_VERSION_PATCH DEC(__FCC_patchlevel__)
+# define COMPILER_VERSION_INTERNAL_STR __clang_version__
+
+
+#elif defined(__FUJITSU)
+# define COMPILER_ID "Fujitsu"
+# if defined(__FCC_version__)
+#   define COMPILER_VERSION __FCC_version__
+# elif defined(__FCC_major__)
+#   define COMPILER_VERSION_MAJOR DEC(__FCC_major__)
+#   define COMPILER_VERSION_MINOR DEC(__FCC_minor__)
+#   define COMPILER_VERSION_PATCH DEC(__FCC_patchlevel__)
+# endif
+# if defined(__fcc_version)
+#   define COMPILER_VERSION_INTERNAL DEC(__fcc_version)
+# elif defined(__FCC_VERSION)
+#   define COMPILER_VERSION_INTERNAL DEC(__FCC_VERSION)
+# endif
+
+
+#elif defined(__ghs__)
+# define COMPILER_ID "GHS"
+/* __GHS_VERSION_NUMBER = VVVVRP */
+# ifdef __GHS_VERSION_NUMBER
+# define COMPILER_VERSION_MAJOR DEC(__GHS_VERSION_NUMBER / 100)
+# define COMPILER_VERSION_MINOR DEC(__GHS_VERSION_NUMBER / 10 % 10)
+# define COMPILER_VERSION_PATCH DEC(__GHS_VERSION_NUMBER      % 10)
+# endif
+
+#elif defined(__TASKING__)
+# define COMPILER_ID "Tasking"
+  # define COMPILER_VERSION_MAJOR DEC(__VERSION__/1000)
+  # define COMPILER_VERSION_MINOR DEC(__VERSION__ % 100)
+# define COMPILER_VERSION_INTERNAL DEC(__VERSION__)
+
+#elif defined(__ORANGEC__)
+# define COMPILER_ID "OrangeC"
+# define COMPILER_VERSION_MAJOR DEC(__ORANGEC_MAJOR__)
+# define COMPILER_VERSION_MINOR DEC(__ORANGEC_MINOR__)
+# define COMPILER_VERSION_PATCH DEC(__ORANGEC_PATCHLEVEL__)
+
+#elif defined(__RENESAS__)
+# define COMPILER_ID "Renesas"
+/* __RENESAS_VERSION__ = 0xVVRRPP00 */
+# define COMPILER_VERSION_MAJOR HEX(__RENESAS_VERSION__ >> 24 & 0xFF)
+# define COMPILER_VERSION_MINOR HEX(__RENESAS_VERSION__ >> 16 & 0xFF)
+# define COMPILER_VERSION_PATCH HEX(__RENESAS_VERSION__ >> 8  & 0xFF)
+
+#elif defined(__SCO_VERSION__)
+# define COMPILER_ID "SCO"
+
+#elif defined(__ARMCC_VERSION) && !defined(__clang__)
+# define COMPILER_ID "ARMCC"
+#if __ARMCC_VERSION >= 1000000
+  /* __ARMCC_VERSION = VRRPPPP */
+  # define COMPILER_VERSION_MAJOR DEC(__ARMCC_VERSION/1000000)
+  # define COMPILER_VERSION_MINOR DEC(__ARMCC_VERSION/10000 % 100)
+  # define COMPILER_VERSION_PATCH DEC(__ARMCC_VERSION     % 10000)
+#else
+  /* __ARMCC_VERSION = VRPPPP */
+  # define COMPILER_VERSION_MAJOR DEC(__ARMCC_VERSION/100000)
+  # define COMPILER_VERSION_MINOR DEC(__ARMCC_VERSION/10000 % 10)
+  # define COMPILER_VERSION_PATCH DEC(__ARMCC_VERSION    % 10000)
+#endif
+
+
+#elif defined(__clang__) && defined(__apple_build_version__)
+# define COMPILER_ID "AppleClang"
+# if defined(_MSC_VER)
+#  define SIMULATE_ID "MSVC"
+# endif
+# define COMPILER_VERSION_MAJOR DEC(__clang_major__)
+# define COMPILER_VERSION_MINOR DEC(__clang_minor__)
+# define COMPILER_VERSION_PATCH DEC(__clang_patchlevel__)
+# if defined(_MSC_VER)
+   /* _MSC_VER = VVRR */
+#  define SIMULATE_VERSION_MAJOR DEC(_MSC_VER / 100)
+#  define SIMULATE_VERSION_MINOR DEC(_MSC_VER % 100)
+# endif
+# define COMPILER_VERSION_TWEAK DEC(__apple_build_version__)
+
+#elif defined(__clang__) && defined(__ARMCOMPILER_VERSION)
+# define COMPILER_ID "ARMClang"
+  # define COMPILER_VERSION_MAJOR DEC(__ARMCOMPILER_VERSION/1000000)
+  # define COMPILER_VERSION_MINOR DEC(__ARMCOMPILER_VERSION/10000 % 100)
+  # define COMPILER_VERSION_PATCH DEC(__ARMCOMPILER_VERSION/100   % 100)
+# define COMPILER_VERSION_INTERNAL DEC(__ARMCOMPILER_VERSION)
+
+#elif defined(__clang__) && defined(__ti__)
+# define COMPILER_ID "TIClang"
+  # define COMPILER_VERSION_MAJOR DEC(__ti_major__)
+  # define COMPILER_VERSION_MINOR DEC(__ti_minor__)
+  # define COMPILER_VERSION_PATCH DEC(__ti_patchlevel__)
+# define COMPILER_VERSION_INTERNAL DEC(__ti_version__)
+
+#elif defined(__clang__)
+# define COMPILER_ID "Clang"
+# if defined(_MSC_VER)
+#  define SIMULATE_ID "MSVC"
+# endif
+# define COMPILER_VERSION_MAJOR DEC(__clang_major__)
+# define COMPILER_VERSION_MINOR DEC(__clang_minor__)
+# define COMPILER_VERSION_PATCH DEC(__clang_patchlevel__)
+# if defined(_MSC_VER)
+   /* _MSC_VER = VVRR */
+#  define SIMULATE_VERSION_MAJOR DEC(_MSC_VER / 100)
+#  define SIMULATE_VERSION_MINOR DEC(_MSC_VER % 100)
+# endif
+
+#elif defined(__LCC__) && (defined(__GNUC__) || defined(__GNUG__) || defined(__MCST__))
+# define COMPILER_ID "LCC"
+# define COMPILER_VERSION_MAJOR DEC(__LCC__ / 100)
+# define COMPILER_VERSION_MINOR DEC(__LCC__ % 100)
+# if defined(__LCC_MINOR__)
+#  define COMPILER_VERSION_PATCH DEC(__LCC_MINOR__)
+# endif
+# if defined(__GNUC__) && defined(__GNUC_MINOR__)
+#  define SIMULATE_ID "GNU"
+#  define SIMULATE_VERSION_MAJOR DEC(__GNUC__)
+#  define SIMULATE_VERSION_MINOR DEC(__GNUC_MINOR__)
+#  if defined(__GNUC_PATCHLEVEL__)
+#   define SIMULATE_VERSION_PATCH DEC(__GNUC_PATCHLEVEL__)
+#  endif
+# endif
+
+#elif defined(__GNUC__) || defined(__GNUG__)
+# define COMPILER_ID "GNU"
+# if defined(__GNUC__)
+#  define COMPILER_VERSION_MAJOR DEC(__GNUC__)
+# else
+#  define COMPILER_VERSION_MAJOR DEC(__GNUG__)
+# endif
+# if defined(__GNUC_MINOR__)
+#  define COMPILER_VERSION_MINOR DEC(__GNUC_MINOR__)
+# endif
+# if defined(__GNUC_PATCHLEVEL__)
+#  define COMPILER_VERSION_PATCH DEC(__GNUC_PATCHLEVEL__)
+# endif
+
+#elif defined(_MSC_VER)
+# define COMPILER_ID "MSVC"
+  /* _MSC_VER = VVRR */
+# define COMPILER_VERSION_MAJOR DEC(_MSC_VER / 100)
+# define COMPILER_VERSION_MINOR DEC(_MSC_VER % 100)
+# if defined(_MSC_FULL_VER)
+#  if _MSC_VER >= 1400
+    /* _MSC_FULL_VER = VVRRPPPPP */
+#   define COMPILER_VERSION_PATCH DEC(_MSC_FULL_VER % 100000)
+#  else
+    /* _MSC_FULL_VER = VVRRPPPP */
+#   define COMPILER_VERSION_PATCH DEC(_MSC_FULL_VER % 10000)
+#  endif
+# endif
+# if defined(_MSC_BUILD)
+#  define COMPILER_VERSION_TWEAK DEC(_MSC_BUILD)
+# endif
+
+#elif defined(_ADI_COMPILER)
+# define COMPILER_ID "ADSP"
+#if defined(__VERSIONNUM__)
+  /* __VERSIONNUM__ = 0xVVRRPPTT */
+#  define COMPILER_VERSION_MAJOR DEC(__VERSIONNUM__ >> 24 & 0xFF)
+#  define COMPILER_VERSION_MINOR DEC(__VERSIONNUM__ >> 16 & 0xFF)
+#  define COMPILER_VERSION_PATCH DEC(__VERSIONNUM__ >> 8 & 0xFF)
+#  define COMPILER_VERSION_TWEAK DEC(__VERSIONNUM__ & 0xFF)
+#endif
+
+#elif defined(__IAR_SYSTEMS_ICC__) || defined(__IAR_SYSTEMS_ICC)
+# define COMPILER_ID "IAR"
+# if defined(__VER__) && defined(__ICCARM__)
+#  define COMPILER_VERSION_MAJOR DEC((__VER__) / 1000000)
+#  define COMPILER_VERSION_MINOR DEC(((__VER__) / 1000) % 1000)
+#  define COMPILER_VERSION_PATCH DEC((__VER__) % 1000)
+#  define COMPILER_VERSION_INTERNAL DEC(__IAR_SYSTEMS_ICC__)
+# elif defined(__VER__) && (defined(__ICCAVR__) || defined(__ICCRX__) || defined(__ICCRH850__) || defined(__ICCRL78__) || defined(__ICC430__) || defined(__ICCRISCV__) || defined(__ICCV850__) || defined(__ICC8051__) || defined(__ICCSTM8__))
+#  define COMPILER_VERSION_MAJOR DEC((__VER__) / 100)
+#  define COMPILER_VERSION_MINOR DEC((__VER__) - (((__VER__) / 100)*100))
+#  define COMPILER_VERSION_PATCH DEC(__SUBVERSION__)
+#  define COMPILER_VERSION_INTERNAL DEC(__IAR_SYSTEMS_ICC__)
+# endif
+
+#elif defined(__DCC__) && defined(_DIAB_TOOL)
+# define COMPILER_ID "Diab"
+  # define COMPILER_VERSION_MAJOR DEC(__VERSION_MAJOR_NUMBER__)
+  # define COMPILER_VERSION_MINOR DEC(__VERSION_MINOR_NUMBER__)
+  # define COMPILER_VERSION_PATCH DEC(__VERSION_ARCH_FEATURE_NUMBER__)
+  # define COMPILER_VERSION_TWEAK DEC(__VERSION_BUG_FIX_NUMBER__)
+
+
+
+/* These compilers are either not known or too old to define an
+  identification macro.  Try to identify the platform and guess that
+  it is the native compiler.  */
+#elif defined(__hpux) || defined(__hpua)
+# define COMPILER_ID "HP"
+
+#else /* unknown compiler */
+# define COMPILER_ID ""
+#endif
+
+/* Construct the string literal in pieces to prevent the source from
+   getting matched.  Store it in a pointer rather than an array
+   because some compilers will just produce instructions to fill the
+   array rather than assigning a pointer to a static array.  */
+char const* info_compiler = "INFO" ":" "compiler[" COMPILER_ID "]";
+#ifdef SIMULATE_ID
+char const* info_simulate = "INFO" ":" "simulate[" SIMULATE_ID "]";
+#endif
+
+#ifdef __QNXNTO__
+char const* qnxnto = "INFO" ":" "qnxnto[]";
+#endif
+
+#if defined(__CRAYXT_COMPUTE_LINUX_TARGET)
+char const *info_cray = "INFO" ":" "compiler_wrapper[CrayPrgEnv]";
+#endif
+
+#define STRINGIFY_HELPER(X) #X
+#define STRINGIFY(X) STRINGIFY_HELPER(X)
+
+/* Identify known platforms by name.  */
+#if defined(__linux) || defined(__linux__) || defined(linux)
+# define PLATFORM_ID "Linux"
+
+#elif defined(__MSYS__)
+# define PLATFORM_ID "MSYS"
+
+#elif defined(__CYGWIN__)
+# define PLATFORM_ID "Cygwin"
+
+#elif defined(__MINGW32__)
+# define PLATFORM_ID "MinGW"
+
+#elif defined(__APPLE__)
+# define PLATFORM_ID "Darwin"
+
+#elif defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
+# define PLATFORM_ID "Windows"
+
+#elif defined(__FreeBSD__) || defined(__FreeBSD)
+# define PLATFORM_ID "FreeBSD"
+
+#elif defined(__NetBSD__) || defined(__NetBSD)
+# define PLATFORM_ID "NetBSD"
+
+#elif defined(__OpenBSD__) || defined(__OPENBSD)
+# define PLATFORM_ID "OpenBSD"
+
+#elif defined(__sun) || defined(sun)
+# define PLATFORM_ID "SunOS"
+
+#elif defined(_AIX) || defined(__AIX) || defined(__AIX__) || defined(__aix) || defined(__aix__)
+# define PLATFORM_ID "AIX"
+
+#elif defined(__hpux) || defined(__hpux__)
+# define PLATFORM_ID "HP-UX"
+
+#elif defined(__HAIKU__)
+# define PLATFORM_ID "Haiku"
+
+#elif defined(__BeOS) || defined(__BEOS__) || defined(_BEOS)
+# define PLATFORM_ID "BeOS"
+
+#elif defined(__QNX__) || defined(__QNXNTO__)
+# define PLATFORM_ID "QNX"
+
+#elif defined(__tru64) || defined(_tru64) || defined(__TRU64__)
+# define PLATFORM_ID "Tru64"
+
+#elif defined(__riscos) || defined(__riscos__)
+# define PLATFORM_ID "RISCos"
+
+#elif defined(__sinix) || defined(__sinix__) || defined(__SINIX__)
+# define PLATFORM_ID "SINIX"
+
+#elif defined(__UNIX_SV__)
+# define PLATFORM_ID "UNIX_SV"
+
+#elif defined(__bsdos__)
+# define PLATFORM_ID "BSDOS"
+
+#elif defined(_MPRAS) || defined(MPRAS)
+# define PLATFORM_ID "MP-RAS"
+
+#elif defined(__osf) || defined(__osf__)
+# define PLATFORM_ID "OSF1"
+
+#elif defined(_SCO_SV) || defined(SCO_SV) || defined(sco_sv)
+# define PLATFORM_ID "SCO_SV"
+
+#elif defined(__ultrix) || defined(__ultrix__) || defined(_ULTRIX)
+# define PLATFORM_ID "ULTRIX"
+
+#elif defined(__XENIX__) || defined(_XENIX) || defined(XENIX)
+# define PLATFORM_ID "Xenix"
+
+#elif defined(__WATCOMC__)
+# if defined(__LINUX__)
+#  define PLATFORM_ID "Linux"
+
+# elif defined(__DOS__)
+#  define PLATFORM_ID "DOS"
+
+# elif defined(__OS2__)
+#  define PLATFORM_ID "OS2"
+
+# elif defined(__WINDOWS__)
+#  define PLATFORM_ID "Windows3x"
+
+# elif defined(__VXWORKS__)
+#  define PLATFORM_ID "VxWorks"
+
+# else /* unknown platform */
+#  define PLATFORM_ID
+# endif
+
+#elif defined(__INTEGRITY)
+# if defined(INT_178B)
+#  define PLATFORM_ID "Integrity178"
+
+# else /* regular Integrity */
+#  define PLATFORM_ID "Integrity"
+# endif
+
+# elif defined(_ADI_COMPILER)
+#  define PLATFORM_ID "ADSP"
+
+#else /* unknown platform */
+# define PLATFORM_ID
+
+#endif
+
+/* For windows compilers MSVC and Intel we can determine
+   the architecture of the compiler being used.  This is because
+   the compilers do not have flags that can change the architecture,
+   but rather depend on which compiler is being used
+*/
+#if defined(_WIN32) && defined(_MSC_VER)
+# if defined(_M_IA64)
+#  define ARCHITECTURE_ID "IA64"
+
+# elif defined(_M_ARM64EC)
+#  define ARCHITECTURE_ID "ARM64EC"
+
+# elif defined(_M_X64) || defined(_M_AMD64)
+#  define ARCHITECTURE_ID "x64"
+
+# elif defined(_M_IX86)
+#  define ARCHITECTURE_ID "X86"
+
+# elif defined(_M_ARM64)
+#  define ARCHITECTURE_ID "ARM64"
+
+# elif defined(_M_ARM)
+#  if _M_ARM == 4
+#   define ARCHITECTURE_ID "ARMV4I"
+#  elif _M_ARM == 5
+#   define ARCHITECTURE_ID "ARMV5I"
+#  else
+#   define ARCHITECTURE_ID "ARMV" STRINGIFY(_M_ARM)
+#  endif
+
+# elif defined(_M_MIPS)
+#  define ARCHITECTURE_ID "MIPS"
+
+# elif defined(_M_SH)
+#  define ARCHITECTURE_ID "SHx"
+
+# else /* unknown architecture */
+#  define ARCHITECTURE_ID ""
+# endif
+
+#elif defined(__WATCOMC__)
+# if defined(_M_I86)
+#  define ARCHITECTURE_ID "I86"
+
+# elif defined(_M_IX86)
+#  define ARCHITECTURE_ID "X86"
+
+# else /* unknown architecture */
+#  define ARCHITECTURE_ID ""
+# endif
+
+#elif defined(__IAR_SYSTEMS_ICC__) || defined(__IAR_SYSTEMS_ICC)
+# if defined(__ICCARM__)
+#  define ARCHITECTURE_ID "ARM"
+
+# elif defined(__ICCRX__)
+#  define ARCHITECTURE_ID "RX"
+
+# elif defined(__ICCRH850__)
+#  define ARCHITECTURE_ID "RH850"
+
+# elif defined(__ICCRL78__)
+#  define ARCHITECTURE_ID "RL78"
+
+# elif defined(__ICCRISCV__)
+#  define ARCHITECTURE_ID "RISCV"
+
+# elif defined(__ICCAVR__)
+#  define ARCHITECTURE_ID "AVR"
+
+# elif defined(__ICC430__)
+#  define ARCHITECTURE_ID "MSP430"
+
+# elif defined(__ICCV850__)
+#  define ARCHITECTURE_ID "V850"
+
+# elif defined(__ICC8051__)
+#  define ARCHITECTURE_ID "8051"
+
+# elif defined(__ICCSTM8__)
+#  define ARCHITECTURE_ID "STM8"
+
+# else /* unknown architecture */
+#  define ARCHITECTURE_ID ""
+# endif
+
+#elif defined(__ghs__)
+# if defined(__PPC64__)
+#  define ARCHITECTURE_ID "PPC64"
+
+# elif defined(__ppc__)
+#  define ARCHITECTURE_ID "PPC"
+
+# elif defined(__ARM__)
+#  define ARCHITECTURE_ID "ARM"
+
+# elif defined(__x86_64__)
+#  define ARCHITECTURE_ID "x64"
+
+# elif defined(__i386__)
+#  define ARCHITECTURE_ID "X86"
+
+# else /* unknown architecture */
+#  define ARCHITECTURE_ID ""
+# endif
+
+#elif defined(__clang__) && defined(__ti__)
+# if defined(__ARM_ARCH)
+#  define ARCHITECTURE_ID "ARM"
+
+# else /* unknown architecture */
+#  define ARCHITECTURE_ID ""
+# endif
+
+#elif defined(__TI_COMPILER_VERSION__)
+# if defined(__TI_ARM__)
+#  define ARCHITECTURE_ID "ARM"
+
+# elif defined(__MSP430__)
+#  define ARCHITECTURE_ID "MSP430"
+
+# elif defined(__TMS320C28XX__)
+#  define ARCHITECTURE_ID "TMS320C28x"
+
+# elif defined(__TMS320C6X__) || defined(_TMS320C6X)
+#  define ARCHITECTURE_ID "TMS320C6x"
+
+# else /* unknown architecture */
+#  define ARCHITECTURE_ID ""
+# endif
+
+# elif defined(__ADSPSHARC__)
+#  define ARCHITECTURE_ID "SHARC"
+
+# elif defined(__ADSPBLACKFIN__)
+#  define ARCHITECTURE_ID "Blackfin"
+
+#elif defined(__TASKING__)
+
+# if defined(__CTC__) || defined(__CPTC__)
+#  define ARCHITECTURE_ID "TriCore"
+
+# elif defined(__CMCS__)
+#  define ARCHITECTURE_ID "MCS"
+
+# elif defined(__CARM__) || defined(__CPARM__)
+#  define ARCHITECTURE_ID "ARM"
+
+# elif defined(__CARC__)
+#  define ARCHITECTURE_ID "ARC"
+
+# elif defined(__C51__)
+#  define ARCHITECTURE_ID "8051"
+
+# elif defined(__CPCP__)
+#  define ARCHITECTURE_ID "PCP"
+
+# else
+#  define ARCHITECTURE_ID ""
+# endif
+
+#elif defined(__RENESAS__)
+# if defined(__CCRX__)
+#  define ARCHITECTURE_ID "RX"
+
+# elif defined(__CCRL__)
+#  define ARCHITECTURE_ID "RL78"
+
+# elif defined(__CCRH__)
+#  define ARCHITECTURE_ID "RH850"
+
+# else
+#  define ARCHITECTURE_ID ""
+# endif
+
+#else
+#  define ARCHITECTURE_ID
+#endif
+
+/* Convert integer to decimal digit literals.  */
+#define DEC(n)                   \
+  ('0' + (((n) / 10000000)%10)), \
+  ('0' + (((n) / 1000000)%10)),  \
+  ('0' + (((n) / 100000)%10)),   \
+  ('0' + (((n) / 10000)%10)),    \
+  ('0' + (((n) / 1000)%10)),     \
+  ('0' + (((n) / 100)%10)),      \
+  ('0' + (((n) / 10)%10)),       \
+  ('0' +  ((n) % 10))
+
+/* Convert integer to hex digit literals.  */
+#define HEX(n)             \
+  ('0' + ((n)>>28 & 0xF)), \
+  ('0' + ((n)>>24 & 0xF)), \
+  ('0' + ((n)>>20 & 0xF)), \
+  ('0' + ((n)>>16 & 0xF)), \
+  ('0' + ((n)>>12 & 0xF)), \
+  ('0' + ((n)>>8  & 0xF)), \
+  ('0' + ((n)>>4  & 0xF)), \
+  ('0' + ((n)     & 0xF))
+
+/* Construct a string literal encoding the version number. */
+#ifdef COMPILER_VERSION
+char const* info_version = "INFO" ":" "compiler_version[" COMPILER_VERSION "]";
+
+/* Construct a string literal encoding the version number components. */
+#elif defined(COMPILER_VERSION_MAJOR)
+char const info_version[] = {
+  'I', 'N', 'F', 'O', ':',
+  'c','o','m','p','i','l','e','r','_','v','e','r','s','i','o','n','[',
+  COMPILER_VERSION_MAJOR,
+# ifdef COMPILER_VERSION_MINOR
+  '.', COMPILER_VERSION_MINOR,
+#  ifdef COMPILER_VERSION_PATCH
+   '.', COMPILER_VERSION_PATCH,
+#   ifdef COMPILER_VERSION_TWEAK
+    '.', COMPILER_VERSION_TWEAK,
+#   endif
+#  endif
+# endif
+  ']','\0'};
+#endif
+
+/* Construct a string literal encoding the internal version number. */
+#ifdef COMPILER_VERSION_INTERNAL
+char const info_version_internal[] = {
+  'I', 'N', 'F', 'O', ':',
+  'c','o','m','p','i','l','e','r','_','v','e','r','s','i','o','n','_',
+  'i','n','t','e','r','n','a','l','[',
+  COMPILER_VERSION_INTERNAL,']','\0'};
+#elif defined(COMPILER_VERSION_INTERNAL_STR)
+char const* info_version_internal = "INFO" ":" "compiler_version_internal[" COMPILER_VERSION_INTERNAL_STR "]";
+#endif
+
+/* Construct a string literal encoding the version number components. */
+#ifdef SIMULATE_VERSION_MAJOR
+char const info_simulate_version[] = {
+  'I', 'N', 'F', 'O', ':',
+  's','i','m','u','l','a','t','e','_','v','e','r','s','i','o','n','[',
+  SIMULATE_VERSION_MAJOR,
+# ifdef SIMULATE_VERSION_MINOR
+  '.', SIMULATE_VERSION_MINOR,
+#  ifdef SIMULATE_VERSION_PATCH
+   '.', SIMULATE_VERSION_PATCH,
+#   ifdef SIMULATE_VERSION_TWEAK
+    '.', SIMULATE_VERSION_TWEAK,
+#   endif
+#  endif
+# endif
+  ']','\0'};
+#endif
+
+/* Construct the string literal in pieces to prevent the source from
+   getting matched.  Store it in a pointer rather than an array
+   because some compilers will just produce instructions to fill the
+   array rather than assigning a pointer to a static array.  */
+char const* info_platform = "INFO" ":" "platform[" PLATFORM_ID "]";
+char const* info_arch = "INFO" ":" "arch[" ARCHITECTURE_ID "]";
+
+
+
+#define CXX_STD_98 199711L
+#define CXX_STD_11 201103L
+#define CXX_STD_14 201402L
+#define CXX_STD_17 201703L
+#define CXX_STD_20 202002L
+#define CXX_STD_23 202302L
+
+#if defined(__INTEL_COMPILER) && defined(_MSVC_LANG)
+#  if _MSVC_LANG > CXX_STD_17
+#    define CXX_STD _MSVC_LANG
+#  elif _MSVC_LANG == CXX_STD_17 && defined(__cpp_aggregate_paren_init)
+#    define CXX_STD CXX_STD_20
+#  elif _MSVC_LANG > CXX_STD_14 && __cplusplus > CXX_STD_17
+#    define CXX_STD CXX_STD_20
+#  elif _MSVC_LANG > CXX_STD_14
+#    define CXX_STD CXX_STD_17
+#  elif defined(__INTEL_CXX11_MODE__) && defined(__cpp_aggregate_nsdmi)
+#    define CXX_STD CXX_STD_14
+#  elif defined(__INTEL_CXX11_MODE__)
+#    define CXX_STD CXX_STD_11
+#  else
+#    define CXX_STD CXX_STD_98
+#  endif
+#elif defined(_MSC_VER) && defined(_MSVC_LANG)
+#  if _MSVC_LANG > __cplusplus
+#    define CXX_STD _MSVC_LANG
+#  else
+#    define CXX_STD __cplusplus
+#  endif
+#elif defined(__NVCOMPILER)
+#  if __cplusplus == CXX_STD_17 && defined(__cpp_aggregate_paren_init)
+#    define CXX_STD CXX_STD_20
+#  else
+#    define CXX_STD __cplusplus
+#  endif
+#elif defined(__INTEL_COMPILER) || defined(__PGI)
+#  if __cplusplus == CXX_STD_11 && defined(__cpp_namespace_attributes)
+#    define CXX_STD CXX_STD_17
+#  elif __cplusplus == CXX_STD_11 && defined(__cpp_aggregate_nsdmi)
+#    define CXX_STD CXX_STD_14
+#  else
+#    define CXX_STD __cplusplus
+#  endif
+#elif (defined(__IBMCPP__) || defined(__ibmxl__)) && defined(__linux__)
+#  if __cplusplus == CXX_STD_11 && defined(__cpp_aggregate_nsdmi)
+#    define CXX_STD CXX_STD_14
+#  else
+#    define CXX_STD __cplusplus
+#  endif
+#elif __cplusplus == 1 && defined(__GXX_EXPERIMENTAL_CXX0X__)
+#  define CXX_STD CXX_STD_11
+#else
+#  define CXX_STD __cplusplus
+#endif
+
+const char* info_language_standard_default = "INFO" ":" "standard_default["
+#if CXX_STD > CXX_STD_23
+  "26"
+#elif CXX_STD > CXX_STD_20
+  "23"
+#elif CXX_STD > CXX_STD_17
+  "20"
+#elif CXX_STD > CXX_STD_14
+  "17"
+#elif CXX_STD > CXX_STD_11
+  "14"
+#elif CXX_STD >= CXX_STD_11
+  "11"
+#else
+  "98"
+#endif
+"]";
+
+const char* info_language_extensions_default = "INFO" ":" "extensions_default["
+#if (defined(__clang__) || defined(__GNUC__) || defined(__xlC__) ||           \
+     defined(__TI_COMPILER_VERSION__) || defined(__RENESAS__)) &&             \
+  !defined(__STRICT_ANSI__)
+  "ON"
+#else
+  "OFF"
+#endif
+"]";
+
+/*--------------------------------------------------------------------------*/
+
+int main(int argc, char* argv[])
+{
+  int require = 0;
+  require += info_compiler[argc];
+  require += info_platform[argc];
+  require += info_arch[argc];
+#ifdef COMPILER_VERSION_MAJOR
+  require += info_version[argc];
+#endif
+#if defined(COMPILER_VERSION_INTERNAL) || defined(COMPILER_VERSION_INTERNAL_STR)
+  require += info_version_internal[argc];
+#endif
+#ifdef SIMULATE_ID
+  require += info_simulate[argc];
+#endif
+#ifdef SIMULATE_VERSION_MAJOR
+  require += info_simulate_version[argc];
+#endif
+#if defined(__CRAYXT_COMPUTE_LINUX_TARGET)
+  require += info_cray[argc];
+#endif
+  require += info_language_standard_default[argc];
+  require += info_language_extensions_default[argc];
+  (void)argv;
+  return require;
+}
+
+```
+
+
 ### Файл: tests\integration\example_integration_test.cpp
 ```cpp
 #include <catch2/catch_test_macros.hpp>
@@ -5169,225 +5952,116 @@ TEST_CASE("Advanced Mock Testing", "[mock][advanced]") {
 ```
 
 
-### Файл: tests\unit\MathUtilities\cone_direction_test.cpp
+### Файл: tests\unit\MathUtilities\coordinate_transformation_roundtrip_test.cpp
 ```cpp
-#define _USE_MATH_DEFINES
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <catch2/generators/catch_generators.hpp>
-#include <catch2/generators/catch_generators_adapters.hpp>
 #include <catch2/generators/catch_generators_random.hpp>
 
-#include "../../../src/utils/ConeDirection/ConeDirection.h"
+#include "../../../include/math/FlightMath.h"
 #include <cmath>
+#include <numbers>
 
 using namespace Catch;
+using namespace core::math;
 
-TEST_CASE("ConeDirection трансформации координат", "[math][transformation][matrix]") {
-    using metricType = float;
+// Feature: coordinate-system-ned-to-enu, Property 6: Coordinate Transformation Round-Trip
+// **Validates: Requirements 4.3**
+
+TEST_CASE("Property 6: Body to ENU to Body transformation round-trip preserves vector", 
+          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
     
-    SECTION("Тождественная трансформация (нулевые углы)") {
-        metricType theta = 0.0f;  // тангаж
-        metricType psi = 0.0f;    // рыскание  
-        metricType gamma = 0.0f;  // крен
-        
-        std::array<metricType, 3> vector = {1.0f, 0.0f, 0.0f};
-        
-        auto bodyToEarth = TransformationFactory<metricType>::createBodyToEarthTransform(
-            theta, psi, gamma, vector);
-        auto earthToBody = TransformationFactory<metricType>::createEarthToBodyTransform(
-            theta, psi, gamma, vector);
-        
-        auto resultBE = bodyToEarth->result_getter();
-        auto resultEB = earthToBody->result_getter();
-        
-        // При нулевых углах трансформации должны быть идентичными
-        REQUIRE(resultBE[0] == Approx(1.0f).margin(1e-6f));
-        REQUIRE(resultBE[1] == Approx(0.0f).margin(1e-6f));
-        REQUIRE(resultBE[2] == Approx(0.0f).margin(1e-6f));
-        
-        REQUIRE(resultEB[0] == Approx(1.0f).margin(1e-6f));
-        REQUIRE(resultEB[1] == Approx(0.0f).margin(1e-6f));
-        REQUIRE(resultEB[2] == Approx(0.0f).margin(1e-6f));
-    }
+    // Generate random angles and vectors
+    auto yaw = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
+    auto pitch = GENERATE(take(10, random(-std::numbers::pi / 2.0 + 0.1, std::numbers::pi / 2.0 - 0.1)));
+    auto roll = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
     
-    SECTION("Чистое вращение по тангажу (только theta)") {
-        metricType theta = static_cast<metricType>(M_PI / 4.0);  // 45 градусов
-        metricType psi = 0.0f;
-        metricType gamma = 0.0f;
-        
-        std::array<metricType, 3> vector = {1.0f, 0.0f, 0.0f};
-        
-        auto bodyToEarth = TransformationFactory<metricType>::createBodyToEarthTransform(
-            theta, psi, gamma, vector);
-        
-        auto result = bodyToEarth->result_getter();
-        
-        metricType cos45 = std::cos(static_cast<metricType>(M_PI / 4.0));
-        metricType sin45 = std::sin(static_cast<metricType>(M_PI / 4.0));
-        
-        REQUIRE(result[0] == Approx(cos45).margin(1e-6f));
-        REQUIRE(result[1] == Approx(sin45).margin(1e-6f));
-        REQUIRE(result[2] == Approx(0.0f).margin(1e-6f));
-    }
+    auto vx = GENERATE(take(10, random(-100.0, 100.0)));
+    auto vy = GENERATE(take(10, random(-100.0, 100.0)));
+    auto vz = GENERATE(take(10, random(-100.0, 100.0)));
     
-    SECTION("Чистое вращение по рысканию (только psi)") {
-        metricType theta = 0.0f;
-        metricType psi = static_cast<metricType>(M_PI / 4.0);  // 45 градусов
-        metricType gamma = 0.0f;
+    Vector3 v_body(vx, vy, vz);
+    
+    SECTION("Transform body → ENU → body returns original vector") {
+        auto euler = EulerAngles::ZYX(yaw, pitch, roll);
+        Matrix3 dcm = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        std::array<metricType, 3> vector = {1.0f, 0.0f, 0.0f};
+        // Transform body to ENU
+        Vector3 v_enu = rotateVector(v_body, dcm, CoordinateFrame::ENU, true);
         
-        auto bodyToEarth = TransformationFactory<metricType>::createBodyToEarthTransform(
-            theta, psi, gamma, vector);
+        // Transform ENU back to body
+        Vector3 v_body_roundtrip = rotateVector(v_enu, dcm, CoordinateFrame::ENU, false);
         
-        auto result = bodyToEarth->result_getter();
+        // Check that we got back the original vector
+        REQUIRE(v_body_roundtrip.x() == Approx(v_body.x()).margin(1e-10));
+        REQUIRE(v_body_roundtrip.y() == Approx(v_body.y()).margin(1e-10));
+        REQUIRE(v_body_roundtrip.z() == Approx(v_body.z()).margin(1e-10));
         
-        metricType cos45 = std::cos(static_cast<metricType>(M_PI / 4.0));
-        metricType sin45 = std::sin(static_cast<metricType>(M_PI / 4.0));
-        
-        REQUIRE(result[0] == Approx(cos45).margin(1e-6f));
-        REQUIRE(result[1] == Approx(0.0f).margin(1e-6f));
-        REQUIRE(result[2] == Approx(-sin45).margin(1e-6f));
+        // Check using norm
+        REQUIRE((v_body_roundtrip - v_body).norm() < 1e-10);
     }
 }
 
-TEST_CASE("ConeDirection свойства трансформаций", "[math][transformation][properties]") {
-    using metricType = float;
+TEST_CASE("Property 6: ENU to Body to ENU transformation round-trip preserves vector", 
+          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
     
-    SECTION("Свойство обратной трансформации") {
-        metricType theta = static_cast<metricType>(M_PI / 6.0);  // 30 градусов
-        metricType psi = static_cast<metricType>(M_PI / 4.0);    // 45 градусов
-        metricType gamma = static_cast<metricType>(M_PI / 3.0);  // 60 градусов
-        
-        std::array<metricType, 3> originalVector = {1.0f, 2.0f, 3.0f};
-        
-        // Прямая трансформация: body -> earth
-        auto bodyToEarth = TransformationFactory<metricType>::createBodyToEarthTransform(
-            theta, psi, gamma, originalVector);
-        auto earthVector = bodyToEarth->result_getter();
-        
-        // Обратная трансформация: earth -> body
-        auto earthToBody = TransformationFactory<metricType>::createEarthToBodyTransform(
-            theta, psi, gamma, earthVector);
-        auto recoveredVector = earthToBody->result_getter();
-        
-        // Должны получить исходный вектор
-        REQUIRE(recoveredVector[0] == Approx(originalVector[0]).margin(1e-4f));
-        REQUIRE(recoveredVector[1] == Approx(originalVector[1]).margin(1e-4f));
-        REQUIRE(recoveredVector[2] == Approx(originalVector[2]).margin(1e-4f));
-    }
+    // Generate random angles and vectors
+    auto yaw = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
+    auto pitch = GENERATE(take(10, random(-std::numbers::pi / 2.0 + 0.1, std::numbers::pi / 2.0 - 0.1)));
+    auto roll = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
     
-    SECTION("Сохранение длины вектора") {
-        metricType theta = static_cast<metricType>(M_PI / 5.0);
-        metricType psi = static_cast<metricType>(M_PI / 7.0);
-        metricType gamma = static_cast<metricType>(M_PI / 11.0);
-        
-        std::array<metricType, 3> vector = {3.0f, 4.0f, 5.0f};
-        metricType originalMagnitude = std::sqrt(vector[0]*vector[0] + 
-                                               vector[1]*vector[1] + 
-                                               vector[2]*vector[2]);
-        
-        auto bodyToEarth = TransformationFactory<metricType>::createBodyToEarthTransform(
-            theta, psi, gamma, vector);
-        auto result = bodyToEarth->result_getter();
-        
-        metricType transformedMagnitude = std::sqrt(result[0]*result[0] + 
-                                                  result[1]*result[1] + 
-                                                  result[2]*result[2]);
-        
-        // Ортогональная трансформация должна сохранять длину вектора
-        REQUIRE(transformedMagnitude == Approx(originalMagnitude).margin(1e-5f));
-    }
+    auto vx = GENERATE(take(10, random(-100.0, 100.0)));
+    auto vy = GENERATE(take(10, random(-100.0, 100.0)));
+    auto vz = GENERATE(take(10, random(-100.0, 100.0)));
     
-    SECTION("Тест ортогональности с единичными векторами") {
-        metricType theta = static_cast<metricType>(M_PI / 8.0);
-        metricType psi = static_cast<metricType>(M_PI / 6.0);
-        metricType gamma = static_cast<metricType>(M_PI / 4.0);
+    Vector3 v_enu(vx, vy, vz);
+    
+    SECTION("Transform ENU → body → ENU returns original vector") {
+        auto euler = EulerAngles::ZYX(yaw, pitch, roll);
+        Matrix3 dcm = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        // Тестируем ортогональные единичные векторы
-        std::array<metricType, 3> ex = {1.0f, 0.0f, 0.0f};
-        std::array<metricType, 3> ey = {0.0f, 1.0f, 0.0f};
-        std::array<metricType, 3> ez = {0.0f, 0.0f, 1.0f};
+        // Transform ENU to body
+        Vector3 v_body = rotateVector(v_enu, dcm, CoordinateFrame::ENU, false);
         
-        auto transform_ex = TransformationFactory<metricType>::createBodyToEarthTransform(
-            theta, psi, gamma, ex);
-        auto transform_ey = TransformationFactory<metricType>::createBodyToEarthTransform(
-            theta, psi, gamma, ey);
-        auto transform_ez = TransformationFactory<metricType>::createBodyToEarthTransform(
-            theta, psi, gamma, ez);
+        // Transform body back to ENU
+        Vector3 v_enu_roundtrip = rotateVector(v_body, dcm, CoordinateFrame::ENU, true);
         
-        auto result_ex = transform_ex->result_getter();
-        auto result_ey = transform_ey->result_getter();
-        auto result_ez = transform_ez->result_getter();
+        // Check that we got back the original vector
+        REQUIRE(v_enu_roundtrip.x() == Approx(v_enu.x()).margin(1e-10));
+        REQUIRE(v_enu_roundtrip.y() == Approx(v_enu.y()).margin(1e-10));
+        REQUIRE(v_enu_roundtrip.z() == Approx(v_enu.z()).margin(1e-10));
         
-        // Проверяем ортогональность трансформированных векторов
-        metricType dot_xy = result_ex[0]*result_ey[0] + result_ex[1]*result_ey[1] + result_ex[2]*result_ey[2];
-        metricType dot_xz = result_ex[0]*result_ez[0] + result_ex[1]*result_ez[1] + result_ex[2]*result_ez[2];
-        metricType dot_yz = result_ey[0]*result_ez[0] + result_ey[1]*result_ez[1] + result_ey[2]*result_ez[2];
-        
-        REQUIRE(dot_xy == Approx(0.0f).margin(1e-6f));
-        REQUIRE(dot_xz == Approx(0.0f).margin(1e-6f));
-        REQUIRE(dot_yz == Approx(0.0f).margin(1e-6f));
-        
-        // Проверяем, что длины остались единичными
-        metricType mag_ex = std::sqrt(result_ex[0]*result_ex[0] + result_ex[1]*result_ex[1] + result_ex[2]*result_ex[2]);
-        metricType mag_ey = std::sqrt(result_ey[0]*result_ey[0] + result_ey[1]*result_ey[1] + result_ey[2]*result_ey[2]);
-        metricType mag_ez = std::sqrt(result_ez[0]*result_ez[0] + result_ez[1]*result_ez[1] + result_ez[2]*result_ez[2]);
-        
-        REQUIRE(mag_ex == Approx(1.0f).margin(1e-6f));
-        REQUIRE(mag_ey == Approx(1.0f).margin(1e-6f));
-        REQUIRE(mag_ez == Approx(1.0f).margin(1e-6f));
+        // Check using norm
+        REQUIRE((v_enu_roundtrip - v_enu).norm() < 1e-10);
     }
 }
 
-TEST_CASE("ConeDirection граничные случаи и стабильность", "[math][transformation][stability][edge]") {
-    using metricType = float;
+TEST_CASE("Property 6: Matrix multiplication round-trip R^T * R * v = v", 
+          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
     
-    SECTION("Приближение малых углов") {
-        metricType small_angle = 1e-6f;
-        std::array<metricType, 3> vector = {1.0f, 1.0f, 1.0f};
-        
-        auto transform = TransformationFactory<metricType>::createBodyToEarthTransform(
-            small_angle, small_angle, small_angle, vector);
-        auto result = transform->result_getter();
-        
-        // При малых углах результат должен быть близок к исходному вектору
-        REQUIRE(result[0] == Approx(vector[0]).margin(1e-5f));
-        REQUIRE(result[1] == Approx(vector[1]).margin(1e-5f));
-        REQUIRE(result[2] == Approx(vector[2]).margin(1e-5f));
-    }
+    // Generate random angles and vectors
+    auto yaw = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
+    auto pitch = GENERATE(take(10, random(-std::numbers::pi / 2.0 + 0.1, std::numbers::pi / 2.0 - 0.1)));
+    auto roll = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
     
-    SECTION("Стабильность с большими углами") {
-        metricType large_angle = static_cast<metricType>(M_PI - 0.1);
-        std::array<metricType, 3> vector = {1.0f, 0.0f, 0.0f};
-        
-        auto transform = TransformationFactory<metricType>::createBodyToEarthTransform(
-            large_angle, 0.0f, 0.0f, vector);
-        auto result = transform->result_getter();
-        
-        // Проверяем, что результат имеет правильную длину
-        metricType magnitude = std::sqrt(result[0]*result[0] + result[1]*result[1] + result[2]*result[2]);
-        REQUIRE(magnitude == Approx(1.0f).margin(1e-5f));
-    }
+    auto vx = GENERATE(take(10, random(-100.0, 100.0)));
+    auto vy = GENERATE(take(10, random(-100.0, 100.0)));
+    auto vz = GENERATE(take(10, random(-100.0, 100.0)));
     
-    SECTION("Трансформация нулевого вектора") {
-        metricType theta = static_cast<metricType>(M_PI / 4.0);
-        metricType psi = static_cast<metricType>(M_PI / 3.0);
-        metricType gamma = static_cast<metricType>(M_PI / 6.0);
+    Vector3 v(vx, vy, vz);
+    
+    SECTION("R^T * (R * v) = v for ENU rotation matrix") {
+        auto euler = EulerAngles::ZYX(yaw, pitch, roll);
+        Matrix3 R = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        std::array<metricType, 3> zero_vector = {0.0f, 0.0f, 0.0f};
+        Vector3 v_rotated = R * v;
+        Vector3 v_roundtrip = R.transpose() * v_rotated;
         
-        auto transform = TransformationFactory<metricType>::createBodyToEarthTransform(
-            theta, psi, gamma, zero_vector);
-        auto result = transform->result_getter();
-        
-        // Трансформация нулевого вектора должна давать нулевой вектор
-        REQUIRE(result[0] == Approx(0.0f).margin(1e-6f));
-        REQUIRE(result[1] == Approx(0.0f).margin(1e-6f));
-        REQUIRE(result[2] == Approx(0.0f).margin(1e-6f));
+        REQUIRE((v_roundtrip - v).norm() < 1e-10);
     }
 }
+
 ```
 
 
@@ -5595,7 +6269,156 @@ TEST_CASE("LinearInterpolator математические свойства", "[
 ```
 
 
-### Файл: tests\unit\MathUtilities\kinematic_state_test.cpp
+### Файл: tests\unit\MathUtilities\kinematic_state_enu_accessors_test.cpp
+```cpp
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <catch2/generators/catch_generators_random.hpp>
+
+#include "../../../src/utils/KinematicState/KinematicState.h"
+
+using namespace Catch;
+
+// Feature: coordinate-system-ned-to-enu, Property 5: Kinematic State Component Accessors
+// **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5**
+
+TEST_CASE("Property 5: KinematicState ENU position accessors return correct components", 
+          "[kinematic][property][enu][coordinate-system-ned-to-enu]") {
+    
+    // Generate random position values
+    auto east = GENERATE(take(10, random(-10000.0, 10000.0)));
+    auto north = GENERATE(take(10, random(-10000.0, 10000.0)));
+    auto altitude = GENERATE(take(10, random(-1000.0, 50000.0)));
+    
+    SECTION("Position accessors return correct ENU components") {
+        Eigen::Vector3d position(east, north, altitude);
+        
+        auto state = KinematicState<double>::createBuilder()
+            .setPosition(position)
+            .build();
+        
+        // Check ENU-specific accessors
+        REQUIRE(state.getEast() == Approx(east));
+        REQUIRE(state.getNorth() == Approx(north));
+        REQUIRE(state.getAltitude() == Approx(altitude));
+        
+        // Verify consistency with generic accessor
+        REQUIRE(state.getPosition().x() == Approx(east));
+        REQUIRE(state.getPosition().y() == Approx(north));
+        REQUIRE(state.getPosition().z() == Approx(altitude));
+    }
+}
+
+TEST_CASE("Property 5: KinematicState ENU velocity accessors return correct components", 
+          "[kinematic][property][enu][coordinate-system-ned-to-enu]") {
+    
+    // Generate random velocity values
+    auto ve = GENERATE(take(10, random(-1000.0, 1000.0)));
+    auto vn = GENERATE(take(10, random(-1000.0, 1000.0)));
+    auto vu = GENERATE(take(10, random(-1000.0, 1000.0)));
+    
+    SECTION("Velocity accessors return correct ENU components") {
+        Eigen::Vector3d velocity(ve, vn, vu);
+        
+        auto state = KinematicState<double>::createBuilder()
+            .setVelocity(velocity)
+            .build();
+        
+        // Check ENU-specific accessors
+        REQUIRE(state.getVelocityEast() == Approx(ve));
+        REQUIRE(state.getVelocityNorth() == Approx(vn));
+        REQUIRE(state.getVelocityUp() == Approx(vu));
+        
+        // Verify consistency with generic accessor
+        REQUIRE(state.getVelocity().x() == Approx(ve));
+        REQUIRE(state.getVelocity().y() == Approx(vn));
+        REQUIRE(state.getVelocity().z() == Approx(vu));
+    }
+}
+
+TEST_CASE("Property 5: KinematicState ENU accessors work with complete state", 
+          "[kinematic][property][enu][coordinate-system-ned-to-enu]") {
+    
+    // Generate random complete state
+    auto east = GENERATE(take(5, random(-10000.0, 10000.0)));
+    auto north = GENERATE(take(5, random(-10000.0, 10000.0)));
+    auto altitude = GENERATE(take(5, random(-1000.0, 50000.0)));
+    auto ve = GENERATE(take(5, random(-1000.0, 1000.0)));
+    auto vn = GENERATE(take(5, random(-1000.0, 1000.0)));
+    auto vu = GENERATE(take(5, random(-1000.0, 1000.0)));
+    
+    SECTION("All ENU accessors work correctly together") {
+        Eigen::Vector3d position(east, north, altitude);
+        Eigen::Vector3d velocity(ve, vn, vu);
+        Eigen::Vector3d euler(0.1, 0.2, 0.3);
+        Eigen::Vector3d omega(0.01, 0.02, 0.03);
+        
+        auto state = KinematicState<double>::createBuilder()
+            .setPosition(position)
+            .setVelocity(velocity)
+            .setEulerAngles(euler)
+            .setAngularVelocity(omega)
+            .build();
+        
+        // Check all ENU accessors
+        REQUIRE(state.getEast() == Approx(east));
+        REQUIRE(state.getNorth() == Approx(north));
+        REQUIRE(state.getAltitude() == Approx(altitude));
+        REQUIRE(state.getVelocityEast() == Approx(ve));
+        REQUIRE(state.getVelocityNorth() == Approx(vn));
+        REQUIRE(state.getVelocityUp() == Approx(vu));
+    }
+}
+
+TEST_CASE("Property 5: ENU accessors handle edge cases correctly", 
+          "[kinematic][property][enu][coordinate-system-ned-to-enu][edge]") {
+    
+    SECTION("Zero position and velocity") {
+        auto state = KinematicState<double>::createBuilder()
+            .setPosition(Eigen::Vector3d::Zero())
+            .setVelocity(Eigen::Vector3d::Zero())
+            .build();
+        
+        REQUIRE(state.getEast() == 0.0);
+        REQUIRE(state.getNorth() == 0.0);
+        REQUIRE(state.getAltitude() == 0.0);
+        REQUIRE(state.getVelocityEast() == 0.0);
+        REQUIRE(state.getVelocityNorth() == 0.0);
+        REQUIRE(state.getVelocityUp() == 0.0);
+    }
+    
+    SECTION("Negative altitude (below sea level)") {
+        Eigen::Vector3d position(100.0, 200.0, -50.0);
+        auto state = KinematicState<double>::createBuilder()
+            .setPosition(position)
+            .build();
+        
+        REQUIRE(state.getAltitude() == Approx(-50.0));
+    }
+    
+    SECTION("Large values") {
+        Eigen::Vector3d position(100000.0, 200000.0, 50000.0);
+        Eigen::Vector3d velocity(5000.0, 6000.0, 7000.0);
+        
+        auto state = KinematicState<double>::createBuilder()
+            .setPosition(position)
+            .setVelocity(velocity)
+            .build();
+        
+        REQUIRE(state.getEast() == Approx(100000.0));
+        REQUIRE(state.getNorth() == Approx(200000.0));
+        REQUIRE(state.getAltitude() == Approx(50000.0));
+        REQUIRE(state.getVelocityEast() == Approx(5000.0));
+        REQUIRE(state.getVelocityNorth() == Approx(6000.0));
+        REQUIRE(state.getVelocityUp() == Approx(7000.0));
+    }
+}
+
+```
+
+
+### Файл: tests\unit\MathUtilities\rotation_matrix_properties_test.cpp
 ```cpp
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
@@ -5603,1006 +6426,273 @@ TEST_CASE("LinearInterpolator математические свойства", "[
 #include <catch2/generators/catch_generators_adapters.hpp>
 #include <catch2/generators/catch_generators_random.hpp>
 
-#include "../../../src/utils/KinematicState.h"
-
-using namespace Catch;
-
-TEST_CASE("KinematicState Builder паттерн работает корректно", "[math][kinematic][builder]") {
-    using metricType = float;
-    
-    SECTION("Конструктор по умолчанию создает нулевое состояние") {
-        auto state = KinematicState<metricType>::createBuilder().build();
-        
-        REQUIRE(state.getPosition().norm() == Approx(0.0f).margin(1e-6f));
-        REQUIRE(state.getVelocity().norm() == Approx(0.0f).margin(1e-6f));
-        REQUIRE(state.getEulerAngles().norm() == Approx(0.0f).margin(1e-6f));
-        REQUIRE(state.getAngularVelocity().norm() == Approx(0.0f).margin(1e-6f));
-    }
-    
-    SECTION("Builder устанавливает значения корректно") {
-        Eigen::Vector3<metricType> pos(1.0f, 2.0f, 3.0f);
-        Eigen::Vector3<metricType> vel(4.0f, 5.0f, 6.0f);
-        Eigen::Vector3<metricType> angles(0.1f, 0.2f, 0.3f);
-        Eigen::Vector3<metricType> angVel(0.4f, 0.5f, 0.6f);
-        
-        auto state = KinematicState<metricType>::createBuilder()
-            .setPosition(pos)
-            .setVelocity(vel)
-            .setEulerAngles(angles)
-            .setAngularVelocity(angVel)
-            .build();
-        
-        REQUIRE(state.getPosition().isApprox(pos, 1e-6f));
-        REQUIRE(state.getVelocity().isApprox(vel, 1e-6f));
-        REQUIRE(state.getEulerAngles().isApprox(angles, 1e-6f));
-        REQUIRE(state.getAngularVelocity().isApprox(angVel, 1e-6f));
-    }
-}
-
-TEST_CASE("KinematicState арифметические операции для RK4 интеграции", "[math][kinematic][rk4][integration]") {
-    using metricType = float;
-    
-    SECTION("Оператор сложения работает корректно") {
-        auto state1 = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(1.0f, 2.0f, 3.0f))
-            .setVelocity(Eigen::Vector3<metricType>(0.1f, 0.2f, 0.3f))
-            .setEulerAngles(Eigen::Vector3<metricType>(0.01f, 0.02f, 0.03f))
-            .setAngularVelocity(Eigen::Vector3<metricType>(0.001f, 0.002f, 0.003f))
-            .build();
-            
-        auto state2 = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(4.0f, 5.0f, 6.0f))
-            .setVelocity(Eigen::Vector3<metricType>(0.4f, 0.5f, 0.6f))
-            .setEulerAngles(Eigen::Vector3<metricType>(0.04f, 0.05f, 0.06f))
-            .setAngularVelocity(Eigen::Vector3<metricType>(0.004f, 0.005f, 0.006f))
-            .build();
-        
-        auto result = state1 + state2;
-        
-        Eigen::Vector3<metricType> expectedPos(5.0f, 7.0f, 9.0f);
-        Eigen::Vector3<metricType> expectedVel(0.5f, 0.7f, 0.9f);
-        Eigen::Vector3<metricType> expectedAngles(0.05f, 0.07f, 0.09f);
-        Eigen::Vector3<metricType> expectedAngVel(0.005f, 0.007f, 0.009f);
-        
-        REQUIRE(result.getPosition().isApprox(expectedPos, 1e-6f));
-        REQUIRE(result.getVelocity().isApprox(expectedVel, 1e-6f));
-        REQUIRE(result.getEulerAngles().isApprox(expectedAngles, 1e-6f));
-        REQUIRE(result.getAngularVelocity().isApprox(expectedAngVel, 1e-6f));
-    }
-    
-    SECTION("Скалярное умножение работает корректно") {
-        auto state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(2.0f, 4.0f, 6.0f))
-            .setVelocity(Eigen::Vector3<metricType>(0.2f, 0.4f, 0.6f))
-            .setEulerAngles(Eigen::Vector3<metricType>(0.02f, 0.04f, 0.06f))
-            .setAngularVelocity(Eigen::Vector3<metricType>(0.002f, 0.004f, 0.006f))
-            .build();
-        
-        metricType scalar = 0.5f;
-        auto result = state * scalar;
-        
-        Eigen::Vector3<metricType> expectedPos(1.0f, 2.0f, 3.0f);
-        Eigen::Vector3<metricType> expectedVel(0.1f, 0.2f, 0.3f);
-        Eigen::Vector3<metricType> expectedAngles(0.01f, 0.02f, 0.03f);
-        Eigen::Vector3<metricType> expectedAngVel(0.001f, 0.002f, 0.003f);
-        
-        REQUIRE(result.getPosition().isApprox(expectedPos, 1e-6f));
-        REQUIRE(result.getVelocity().isApprox(expectedVel, 1e-6f));
-        REQUIRE(result.getEulerAngles().isApprox(expectedAngles, 1e-6f));
-        REQUIRE(result.getAngularVelocity().isApprox(expectedAngVel, 1e-6f));
-    }
-    
-    SECTION("Глобальный оператор скалярного умножения работает") {
-        auto state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(1.0f, 2.0f, 3.0f))
-            .setVelocity(Eigen::Vector3<metricType>(0.1f, 0.2f, 0.3f))
-            .build();
-        
-        metricType scalar = 2.0f;
-        auto result = scalar * state;
-        
-        Eigen::Vector3<metricType> expectedPos(2.0f, 4.0f, 6.0f);
-        Eigen::Vector3<metricType> expectedVel(0.2f, 0.4f, 0.6f);
-        
-        REQUIRE(result.getPosition().isApprox(expectedPos, 1e-6f));
-        REQUIRE(result.getVelocity().isApprox(expectedVel, 1e-6f));
-    }
-}
-
-TEST_CASE("KinematicState математические свойства RK4 интеграции", "[math][kinematic][rk4][properties]") {
-    using metricType = float;
-    
-    SECTION("Сложение коммутативно") {
-        auto state1 = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(1.0f, 2.0f, 3.0f))
-            .setVelocity(Eigen::Vector3<metricType>(0.1f, 0.2f, 0.3f))
-            .build();
-            
-        auto state2 = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(4.0f, 5.0f, 6.0f))
-            .setVelocity(Eigen::Vector3<metricType>(0.4f, 0.5f, 0.6f))
-            .build();
-        
-        auto result1 = state1 + state2;
-        auto result2 = state2 + state1;
-        
-        REQUIRE(result1.getPosition().isApprox(result2.getPosition(), 1e-6f));
-        REQUIRE(result1.getVelocity().isApprox(result2.getVelocity(), 1e-6f));
-        REQUIRE(result1.getEulerAngles().isApprox(result2.getEulerAngles(), 1e-6f));
-        REQUIRE(result1.getAngularVelocity().isApprox(result2.getAngularVelocity(), 1e-6f));
-    }
-    
-    SECTION("Скалярное умножение ассоциативно") {
-        auto state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(1.0f, 2.0f, 3.0f))
-            .setVelocity(Eigen::Vector3<metricType>(0.1f, 0.2f, 0.3f))
-            .build();
-        
-        metricType a = 2.0f;
-        metricType b = 3.0f;
-        
-        auto result1 = (a * b) * state;
-        auto result2 = a * (b * state);
-        
-        REQUIRE(result1.getPosition().isApprox(result2.getPosition(), 1e-6f));
-        REQUIRE(result1.getVelocity().isApprox(result2.getVelocity(), 1e-6f));
-    }
-    
-    SECTION("Дистрибутивное свойство выполняется") {
-        auto state1 = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(1.0f, 2.0f, 3.0f))
-            .setVelocity(Eigen::Vector3<metricType>(0.1f, 0.2f, 0.3f))
-            .build();
-            
-        auto state2 = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(4.0f, 5.0f, 6.0f))
-            .setVelocity(Eigen::Vector3<metricType>(0.4f, 0.5f, 0.6f))
-            .build();
-        
-        metricType scalar = 2.0f;
-        
-        auto result1 = scalar * (state1 + state2);
-        auto result2 = (scalar * state1) + (scalar * state2);
-        
-        REQUIRE(result1.getPosition().isApprox(result2.getPosition(), 1e-6f));
-        REQUIRE(result1.getVelocity().isApprox(result2.getVelocity(), 1e-6f));
-        REQUIRE(result1.getEulerAngles().isApprox(result2.getEulerAngles(), 1e-6f));
-        REQUIRE(result1.getAngularVelocity().isApprox(result2.getAngularVelocity(), 1e-6f));
-    }
-}
-
-TEST_CASE("KinematicState граничные случаи и стабильность", "[math][kinematic][stability][edge]") {
-    using metricType = float;
-    
-    SECTION("Умножение на нулевой скаляр") {
-        auto state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(1.0f, 2.0f, 3.0f))
-            .setVelocity(Eigen::Vector3<metricType>(0.1f, 0.2f, 0.3f))
-            .build();
-        
-        auto result = metricType(0.0f) * state;
-        
-        REQUIRE(result.getPosition().norm() == Approx(0.0f).margin(1e-6f));
-        REQUIRE(result.getVelocity().norm() == Approx(0.0f).margin(1e-6f));
-        REQUIRE(result.getEulerAngles().norm() == Approx(0.0f).margin(1e-6f));
-        REQUIRE(result.getAngularVelocity().norm() == Approx(0.0f).margin(1e-6f));
-    }
-    
-    SECTION("Умножение на единичный скаляр") {
-        auto state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(1.0f, 2.0f, 3.0f))
-            .setVelocity(Eigen::Vector3<metricType>(0.1f, 0.2f, 0.3f))
-            .build();
-        
-        auto result = metricType(1.0f) * state;
-        
-        REQUIRE(result.getPosition().isApprox(state.getPosition(), 1e-6f));
-        REQUIRE(result.getVelocity().isApprox(state.getVelocity(), 1e-6f));
-        REQUIRE(result.getEulerAngles().isApprox(state.getEulerAngles(), 1e-6f));
-        REQUIRE(result.getAngularVelocity().isApprox(state.getAngularVelocity(), 1e-6f));
-    }
-    
-    SECTION("Стабильность с большими значениями") {
-        auto state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(1e6f, 2e6f, 3e6f))
-            .setVelocity(Eigen::Vector3<metricType>(1e3f, 2e3f, 3e3f))
-            .build();
-        
-        auto result = state * metricType(1e-3f);
-        
-        Eigen::Vector3<metricType> expectedPos(1e3f, 2e3f, 3e3f);
-        Eigen::Vector3<metricType> expectedVel(1.0f, 2.0f, 3.0f);
-        
-        REQUIRE(result.getPosition().isApprox(expectedPos, 1e-3f));
-        REQUIRE(result.getVelocity().isApprox(expectedVel, 1e-6f));
-    }
-}
-```
-
-
-### Файл: tests\unit\OdeSolver\basic_rk4_test.cpp
-```cpp
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_approx.hpp>
+#include "../../../include/math/FlightMath.h"
 #include <cmath>
-
-#ifndef _USE_MATH_DEFINES
-#define _USE_MATH_DEFINES
-#endif
-
-// Подключаем необходимые заголовки
-#include "GLOBAL_CONFIG.h"
-
-// Подключаем моки для тестирования
-#include "test_mocks.h"
-
-// Подключаем реальный RungeKutta4Solver
-#include "../../../src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.h"
+#include <numbers>
 
 using namespace Catch;
-using metricType = GLOBAL_CONFIG::PROJECT_TYPE;
+using namespace core::math;
 
-// === ТЕСТЫ РЕАЛЬНОГО RUNGEКUTTA4SOLVER ===
+// Feature: coordinate-system-ned-to-enu, Property 1: Rotation Matrix Orthogonality and Determinant
+// **Validates: Requirements 1.1, 1.2, 1.3**
 
-TEST_CASE("RungeKutta4Solver - Экспоненциальное затухание", "[solver][rk4][exponential][russian]") {
-    using CallbackType = GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE<IObjectManager<metricType>>;
+/**
+ * @brief Helper function to check if a matrix is orthogonal
+ * 
+ * A matrix R is orthogonal if R^T * R = I
+ * 
+ * @param R The rotation matrix to check
+ * @param tolerance Numerical tolerance for comparison
+ * @return true if the matrix is orthogonal within tolerance
+ */
+bool isOrthogonal(const Matrix3& R, double tolerance = 1e-10) {
+    Matrix3 identity = R.transpose() * R;
+    Matrix3 expected = Matrix3::Identity();
+    return (identity - expected).norm() < tolerance;
+}
+
+/**
+ * @brief Helper function to check if a matrix has determinant 1
+ * 
+ * A proper rotation matrix has determinant +1
+ * 
+ * @param R The rotation matrix to check
+ * @param tolerance Numerical tolerance for comparison
+ * @return true if the determinant is 1 within tolerance
+ */
+bool hasUnitDeterminant(const Matrix3& R, double tolerance = 1e-10) {
+    return std::abs(R.determinant() - 1.0) < tolerance;
+}
+
+/**
+ * @brief Helper function to check if a matrix is a proper rotation matrix
+ * 
+ * A proper rotation matrix must be orthogonal and have determinant 1
+ * 
+ * @param R The rotation matrix to check
+ * @param tolerance Numerical tolerance for comparison
+ * @return true if the matrix is a proper rotation matrix
+ */
+bool isProperRotationMatrix(const Matrix3& R, double tolerance = 1e-10) {
+    return isOrthogonal(R, tolerance) && hasUnitDeterminant(R, tolerance);
+}
+
+TEST_CASE("Property 1: Rotation matrices Rx, Ry, Rz are orthogonal with determinant 1 in ENU", 
+          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
     
-    SECTION("Стандартное экспоненциальное затухание: dy/dt = -y") {
-        // Создаем систему динамики для экспоненциального затухания
-        auto dynamics = createExponentialDecaySystem<metricType>(metricType(1.0));
+    // Generate 5 random angles in the range [-π, π]
+    auto angle = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
+    
+    SECTION("Rx rotation matrix in ENU satisfies orthogonality and determinant properties") {
+        // Create Euler angles with only roll component (rotation about X axis)
+        auto euler = EulerAngles::ZYX(0.0, 0.0, angle);
         
-        // Создаем объект и менеджер
-        auto object = std::make_shared<MockObject<metricType>>(
-            dynamics,
-            Eigen::Vector3<metricType>(metricType(1.0), metricType(0.0), metricType(0.0))
-        );
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object);
+        // Get DCM in ENU coordinates
+        Matrix3 Rx_enu = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        // Создаем SimulationMomento
-        SimulationMomento<metricType> momento;
+        // Check orthogonality: R^T * R = I
+        REQUIRE(isOrthogonal(Rx_enu, 1e-10));
         
-        // Инициализируем momento через saveStartParams
-        momento.saveStartParams(object_manager->getAllObjects());
+        // Check determinant: det(R) = 1
+        REQUIRE(hasUnitDeterminant(Rx_enu, 1e-10));
         
-        // Колбэк остановки: интегрируем до t = 2.0
-        metricType target_time = metricType(2.0);
-        CallbackType callback = [target_time](auto, metricType t) -> bool {
-            return t < target_time;
-        };
-        
-        // Запускаем реальный RungeKutta4Solver
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_NOTHROW(solver.solve(
-            object_manager,
-            metricType(0.0),    // t_start
-            metricType(0.001),  // step_size (малый шаг для точности)
-            callback,
-            momento
-        ));
-        
-        // Проверяем результат
-        const auto& final_states = momento.getStateStorageByID(1).getStates();
-        REQUIRE(final_states.size() > 1);
-        
-        const auto& final_state = final_states.back();
-        metricType final_time = final_state.getTime();
-        metricType numerical_result = final_state.getPosition().x();
-        
-        // Аналитическое решение: x(t) = exp(-t)
-        metricType analytical_result = std::exp(-final_time);
-        
-        INFO("Время: " << final_time << ", Численное: " << numerical_result << ", Аналитическое: " << analytical_result);
-        
-        // Проверяем точность (для float используем менее строгую толерантность)
-        REQUIRE(numerical_result == Approx(analytical_result).epsilon(metricType(1e-4)));
+        // Combined check
+        REQUIRE(isProperRotationMatrix(Rx_enu, 1e-10));
     }
     
-    SECTION("Экспоненциальное затухание с различными параметрами") {
-        struct TestCase {
-            metricType lambda;
-            metricType y0;
-            metricType t_end;
-            std::string description;
-        };
+    SECTION("Ry rotation matrix in ENU satisfies orthogonality and determinant properties") {
+        // Create Euler angles with only pitch component (rotation about Y axis)
+        auto euler = EulerAngles::ZYX(0.0, angle, 0.0);
         
-        std::vector<TestCase> test_cases = {
-            {metricType(0.5), metricType(2.0), metricType(3.0), "Медленное затухание"},
-            {metricType(2.0), metricType(0.5), metricType(1.0), "Быстрое затухание"},
-            {metricType(0.1), metricType(10.0), metricType(5.0), "Очень медленное затухание"}
-        };
+        // Get DCM in ENU coordinates
+        Matrix3 Ry_enu = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        for (const auto& test_case : test_cases) {
-            INFO("Тест: " << test_case.description);
-            
-            // Создаем систему динамики: dy/dt = -lambda * y
-            auto dynamics = createExponentialDecaySystem<metricType>(test_case.lambda);
-            
-            auto object = std::make_shared<MockObject<metricType>>(
-                dynamics,
-                Eigen::Vector3<metricType>(test_case.y0, metricType(0.0), metricType(0.0))
-            );
-            auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-            object_manager->addObject(1, object);
-            
-            SimulationMomento<metricType> momento;
-            momento.saveStartParams(object_manager->getAllObjects());
-            
-            CallbackType callback = [t_end = test_case.t_end](auto, metricType t) -> bool {
-                return t < t_end;
-            };
-            
-            RungeKutta4Solver<metricType, CallbackType> solver;
-            
-            REQUIRE_NOTHROW(solver.solve(
-                object_manager,
-                metricType(0.0),
-                metricType(0.001),
-                callback,
-                momento
-            ));
-            
-            const auto& states = momento.getStateStorageByID(1).getStates();
-            const auto& final_state = states.back();
-            
-            metricType numerical_result = final_state.getPosition().x();
-            metricType analytical_result = test_case.y0 * std::exp(-test_case.lambda * test_case.t_end);
-            
-            INFO("Lambda: " << test_case.lambda << ", y0: " << test_case.y0 << ", t_end: " << test_case.t_end);
-            REQUIRE(numerical_result == Approx(analytical_result).epsilon(metricType(1e-4)));
-        }
+        // Check orthogonality: R^T * R = I
+        REQUIRE(isOrthogonal(Ry_enu, 1e-10));
+        
+        // Check determinant: det(R) = 1
+        REQUIRE(hasUnitDeterminant(Ry_enu, 1e-10));
+        
+        // Combined check
+        REQUIRE(isProperRotationMatrix(Ry_enu, 1e-10));
+    }
+    
+    SECTION("Rz rotation matrix in ENU satisfies orthogonality and determinant properties") {
+        // Create Euler angles with only yaw component (rotation about Z axis)
+        auto euler = EulerAngles::ZYX(angle, 0.0, 0.0);
+        
+        // Get DCM in ENU coordinates
+        Matrix3 Rz_enu = eulerToDCM(euler, CoordinateFrame::ENU);
+        
+        // Check orthogonality: R^T * R = I
+        REQUIRE(isOrthogonal(Rz_enu, 1e-10));
+        
+        // Check determinant: det(R) = 1
+        REQUIRE(hasUnitDeterminant(Rz_enu, 1e-10));
+        
+        // Combined check
+        REQUIRE(isProperRotationMatrix(Rz_enu, 1e-10));
     }
 }
 
-TEST_CASE("RungeKutta4Solver - Экспоненциальный рост", "[solver][rk4][growth][russian]") {
-    using CallbackType = GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE<IObjectManager<metricType>>;
+TEST_CASE("Property 1: Combined rotation matrices in ENU maintain orthogonality", 
+          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
     
-    SECTION("Контролируемый экспоненциальный рост") {
-        metricType lambda = metricType(0.5);
-        metricType y0 = metricType(1.0);
-        metricType t_end = metricType(1.0);
+    // Generate 5 random angle combinations
+    auto yaw = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
+    auto pitch = GENERATE(take(5, random(-std::numbers::pi / 2.0 + 0.1, std::numbers::pi / 2.0 - 0.1)));
+    auto roll = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
+    
+    SECTION("Combined rotation matrix Rz(yaw) * Ry(pitch) * Rx(roll) in ENU is orthogonal") {
+        // Create Euler angles with all three components
+        auto euler = EulerAngles::ZYX(yaw, pitch, roll);
         
-        // Система динамики: dy/dt = lambda * y
-        auto dynamics = createExponentialGrowthSystem<metricType>(lambda);
+        // Get DCM in ENU coordinates
+        Matrix3 R_enu = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        auto object = std::make_shared<MockObject<metricType>>(
-            dynamics,
-            Eigen::Vector3<metricType>(y0, metricType(0.0), metricType(0.0))
-        );
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object);
+        // Check orthogonality: R^T * R = I
+        REQUIRE(isOrthogonal(R_enu, 1e-10));
         
-        auto initial_state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(y0, metricType(0.0), metricType(0.0)))
-            .build();
+        // Check determinant: det(R) = 1
+        REQUIRE(hasUnitDeterminant(R_enu, 1e-10));
         
-        SimulationMomento<metricType> momento;
-        auto snapshot = ObjSnapshot<metricType>::createBuilder(initial_state)
-            .setTime(metricType(0.0)).setMass(metricType(1.0))
-            .setInertia(Eigen::Vector3<metricType>(metricType(1.0), metricType(1.0), metricType(1.0)))
-            .setTotalForce(Eigen::Vector3<metricType>::Zero())
-            .setTotalMoment(Eigen::Vector3<metricType>::Zero())
-            .setTotalForceEarth(Eigen::Vector3<metricType>::Zero())
-            .setTotalMomentEarth(Eigen::Vector3<metricType>::Zero())
-            .buildUnique();
-        
-        momento.addSnapshotByID(1, std::move(snapshot));
-        
-        CallbackType callback = [t_end](auto, metricType t) -> bool {
-            return t < t_end;
-        };
-        
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_NOTHROW(solver.solve(
-            object_manager,
-            metricType(0.0),
-            metricType(0.001),
-            callback,
-            momento
-        ));
-        
-        const auto& states = momento.getStateStorageByID(1).getStates();
-        const auto& final_state = states.back();
-        
-        metricType numerical_result = final_state.getPosition().x();
-        metricType analytical_result = y0 * std::exp(lambda * t_end);
-        
-        INFO("Численное: " << numerical_result << ", Аналитическое: " << analytical_result);
-        REQUIRE(numerical_result == Approx(analytical_result).epsilon(metricType(1e-4)));
+        // Combined check
+        REQUIRE(isProperRotationMatrix(R_enu, 1e-10));
     }
 }
 
-TEST_CASE("RungeKutta4Solver - Линейные ОДУ", "[solver][rk4][linear][russian]") {
-    using CallbackType = GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE<IObjectManager<metricType>>;
+TEST_CASE("Property 1: Rotation matrices preserve vector magnitude in ENU", 
+          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
     
-    SECTION("Линейная функция: dy/dt = t") {
-        // Система динамики: dx/dt = t (интеграл: x = t²/2 + C)
-        auto dynamics = createLinearSystem<metricType>();
+    // Generate random angles and vectors
+    auto angle = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
+    auto vx = GENERATE(take(5, random(-100.0, 100.0)));
+    auto vy = GENERATE(take(5, random(-100.0, 100.0)));
+    auto vz = GENERATE(take(5, random(-100.0, 100.0)));
+    
+    Vector3 v(vx, vy, vz);
+    double original_magnitude = v.norm();
+    
+    SECTION("Rx rotation preserves vector magnitude in ENU") {
+        auto euler = EulerAngles::ZYX(0.0, 0.0, angle);
+        Matrix3 Rx_enu = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        metricType y0 = metricType(0.0);
-        metricType t_end = metricType(1.0);
+        Vector3 v_rotated = Rx_enu * v;
+        double rotated_magnitude = v_rotated.norm();
         
-        auto object = std::make_shared<MockObject<metricType>>(
-            dynamics,
-            Eigen::Vector3<metricType>(y0, metricType(0.0), metricType(0.0))
-        );
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object);
-        
-        auto initial_state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(y0, metricType(0.0), metricType(0.0)))
-            .build();
-        
-        SimulationMomento<metricType> momento;
-        auto snapshot = ObjSnapshot<metricType>::createBuilder(initial_state)
-            .setTime(metricType(0.0)).setMass(metricType(1.0))
-            .setInertia(Eigen::Vector3<metricType>(metricType(1.0), metricType(1.0), metricType(1.0)))
-            .setTotalForce(Eigen::Vector3<metricType>::Zero())
-            .setTotalMoment(Eigen::Vector3<metricType>::Zero())
-            .setTotalForceEarth(Eigen::Vector3<metricType>::Zero())
-            .setTotalMomentEarth(Eigen::Vector3<metricType>::Zero())
-            .buildUnique();
-        
-        momento.addSnapshotByID(1, std::move(snapshot));
-        
-        CallbackType callback = [t_end](auto, metricType t) -> bool {
-            return t < t_end;
-        };
-        
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_NOTHROW(solver.solve(
-            object_manager,
-            metricType(0.0),
-            metricType(0.1),  // Можно использовать больший шаг для полиномов
-            callback,
-            momento
-        ));
-        
-        const auto& states = momento.getStateStorageByID(1).getStates();
-        const auto& final_state = states.back();
-        
-        metricType numerical_result = final_state.getPosition().x();
-        metricType analytical_result = t_end * t_end * metricType(0.5);  // x = t²/2
-        
-        INFO("Численное: " << numerical_result << ", Аналитическое: " << analytical_result);
-        // RK4 должен быть точным для полиномов до степени 3
-        REQUIRE(numerical_result == Approx(analytical_result).margin(metricType(1e-10)));
+        REQUIRE(rotated_magnitude == Approx(original_magnitude).margin(1e-10));
     }
     
-    SECTION("Константная функция: dy/dt = 1") {
-        // Система динамики: dx/dt = 1 (интеграл: x = t + C)
-        auto dynamics = createConstantSystem<metricType>();
+    SECTION("Ry rotation preserves vector magnitude in ENU") {
+        auto euler = EulerAngles::ZYX(0.0, angle, 0.0);
+        Matrix3 Ry_enu = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        metricType y0 = metricType(0.0);
-        metricType t_end = metricType(2.0);
+        Vector3 v_rotated = Ry_enu * v;
+        double rotated_magnitude = v_rotated.norm();
         
-        auto object = std::make_shared<MockObject<metricType>>(
-            dynamics,
-            Eigen::Vector3<metricType>(y0, metricType(0.0), metricType(0.0))
-        );
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object);
+        REQUIRE(rotated_magnitude == Approx(original_magnitude).margin(1e-10));
+    }
+    
+    SECTION("Rz rotation preserves vector magnitude in ENU") {
+        auto euler = EulerAngles::ZYX(angle, 0.0, 0.0);
+        Matrix3 Rz_enu = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        auto initial_state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(y0, metricType(0.0), metricType(0.0)))
-            .build();
+        Vector3 v_rotated = Rz_enu * v;
+        double rotated_magnitude = v_rotated.norm();
         
-        SimulationMomento<metricType> momento;
-        auto snapshot = ObjSnapshot<metricType>::createBuilder(initial_state)
-            .setTime(metricType(0.0)).setMass(metricType(1.0))
-            .setInertia(Eigen::Vector3<metricType>(metricType(1.0), metricType(1.0), metricType(1.0)))
-            .setTotalForce(Eigen::Vector3<metricType>::Zero())
-            .setTotalMoment(Eigen::Vector3<metricType>::Zero())
-            .setTotalForceEarth(Eigen::Vector3<metricType>::Zero())
-            .setTotalMomentEarth(Eigen::Vector3<metricType>::Zero())
-            .buildUnique();
-        
-        momento.addSnapshotByID(1, std::move(snapshot));
-        
-        CallbackType callback = [t_end](auto, metricType t) -> bool {
-            return t < t_end;
-        };
-        
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_NOTHROW(solver.solve(
-            object_manager,
-            metricType(0.0),
-            metricType(0.1),
-            callback,
-            momento
-        ));
-        
-        const auto& states = momento.getStateStorageByID(1).getStates();
-        const auto& final_state = states.back();
-        
-        metricType numerical_result = final_state.getPosition().x();
-        metricType analytical_result = t_end;  // x = t
-        
-        INFO("Численное: " << numerical_result << ", Аналитическое: " << analytical_result);
-        REQUIRE(numerical_result == Approx(analytical_result).margin(metricType(1e-10)));
+        REQUIRE(rotated_magnitude == Approx(original_magnitude).margin(1e-10));
     }
 }
 
-TEST_CASE("RungeKutta4Solver - Порядок точности", "[solver][rk4][order][russian]") {
-    using CallbackType = GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE<IObjectManager<metricType>>;
+TEST_CASE("Property 1: Rotation matrix inverse equals transpose in ENU", 
+          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
     
-    SECTION("Проверка сходимости четвертого порядка") {
-        // Используем экспоненциальное затухание для проверки порядка
-        metricType y0 = metricType(1.0);
-        metricType t_end = metricType(1.0);
-        metricType analytical_result = std::exp(-t_end);
+    // Generate random angles
+    auto yaw = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
+    auto pitch = GENERATE(take(5, random(-std::numbers::pi / 2.0 + 0.1, std::numbers::pi / 2.0 - 0.1)));
+    auto roll = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
+    
+    SECTION("For orthogonal rotation matrix R in ENU: R^(-1) = R^T") {
+        auto euler = EulerAngles::ZYX(yaw, pitch, roll);
+        Matrix3 R_enu = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        std::vector<metricType> step_sizes = {metricType(0.1), metricType(0.05), metricType(0.025), metricType(0.0125)};
-        std::vector<metricType> errors;
+        Matrix3 R_inverse = R_enu.inverse();
+        Matrix3 R_transpose = R_enu.transpose();
         
-        for (metricType dt : step_sizes) {
-            auto dynamics = createExponentialDecaySystem<metricType>(metricType(1.0));
-            
-            auto object = std::make_shared<MockObject<metricType>>(
-                dynamics,
-                Eigen::Vector3<metricType>(y0, metricType(0.0), metricType(0.0))
-            );
-            auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-            object_manager->addObject(1, object);
-            
-            auto initial_state = KinematicState<metricType>::createBuilder()
-                .setPosition(Eigen::Vector3<metricType>(y0, metricType(0.0), metricType(0.0)))
-                .build();
-            
-            SimulationMomento<metricType> momento;
-            auto snapshot = ObjSnapshot<metricType>::createBuilder(initial_state)
-                .setTime(metricType(0.0)).setMass(metricType(1.0))
-                .setInertia(Eigen::Vector3<metricType>(metricType(1.0), metricType(1.0), metricType(1.0)))
-                .setTotalForce(Eigen::Vector3<metricType>::Zero())
-                .setTotalMoment(Eigen::Vector3<metricType>::Zero())
-                .setTotalForceEarth(Eigen::Vector3<metricType>::Zero())
-                .setTotalMomentEarth(Eigen::Vector3<metricType>::Zero())
-                .buildUnique();
-            
-            momento.addSnapshotByID(1, std::move(snapshot));
-            
-            CallbackType callback = [t_end](auto, metricType t) -> bool {
-                return t < t_end;
-            };
-            
-            RungeKutta4Solver<metricType, CallbackType> solver;
-            solver.solve(object_manager, metricType(0.0), dt, callback, momento);
-            
-            const auto& states = momento.getStateStorageByID(1).getStates();
-            metricType numerical_result = states.back().getPosition().x();
-            metricType error = std::abs(numerical_result - analytical_result);
-            errors.push_back(error);
-        }
+        // Check that inverse equals transpose
+        REQUIRE((R_inverse - R_transpose).norm() < 1e-10);
         
-        // Проверяем, что ошибка уменьшается при уменьшении шага (базовая сходимость)
-        for (size_t i = 1; i < errors.size(); ++i) {
-            INFO("Шаг " << i << ": ошибка[" << i-1 << "] = " << errors[i-1] << ", ошибка[" << i << "] = " << errors[i]);
-            
-            // Проверяем сходимость (ошибка должна уменьшаться)
-            // Для float пропускаем тест если достигли машинной точности
-            if (errors[i] > metricType(5e-7) && errors[i-1] > metricType(5e-7)) {
-                REQUIRE(errors[i] < errors[i-1]);  // Ошибка должна уменьшаться
-            } else {
-                // На машинной точности просто проверяем разумность
-                REQUIRE(errors[i] < metricType(1e-5));
-            }
-        }
+        // Verify that R * R^T = I
+        Matrix3 identity_check = R_enu * R_transpose;
+        REQUIRE((identity_check - Matrix3::Identity()).norm() < 1e-10);
     }
 }
 
-TEST_CASE("RungeKutta4Solver - Тесты стабильности", "[solver][rk4][stability][russian]") {
-    using CallbackType = GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE<IObjectManager<metricType>>;
+TEST_CASE("Property 1: Edge cases for rotation matrices in ENU", 
+          "[math][rotation][property][enu][coordinate-system-ned-to-enu][edge]") {
     
-    SECTION("Стабильная интеграция с разумными размерами шага") {
-        auto dynamics = createExponentialDecaySystem<metricType>(metricType(1.0));
+    SECTION("Zero rotation produces identity matrix in ENU") {
+        auto euler = EulerAngles::ZYX(0.0, 0.0, 0.0);
+        Matrix3 R_enu = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        metricType y0 = metricType(1.0);
-        metricType t_end = metricType(5.0);
-        
-        auto object = std::make_shared<MockObject<metricType>>(
-            dynamics,
-            Eigen::Vector3<metricType>(y0, metricType(0.0), metricType(0.0))
-        );
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object);
-        
-        auto initial_state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(y0, metricType(0.0), metricType(0.0)))
-            .build();
-        
-        SimulationMomento<metricType> momento;
-        auto snapshot = ObjSnapshot<metricType>::createBuilder(initial_state)
-            .setTime(metricType(0.0)).setMass(metricType(1.0))
-            .setInertia(Eigen::Vector3<metricType>(metricType(1.0), metricType(1.0), metricType(1.0)))
-            .setTotalForce(Eigen::Vector3<metricType>::Zero())
-            .setTotalMoment(Eigen::Vector3<metricType>::Zero())
-            .setTotalForceEarth(Eigen::Vector3<metricType>::Zero())
-            .setTotalMomentEarth(Eigen::Vector3<metricType>::Zero())
-            .buildUnique();
-        
-        momento.addSnapshotByID(1, std::move(snapshot));
-        
-        CallbackType callback = [t_end](auto, metricType t) -> bool {
-            return t < t_end;
-        };
-        
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_NOTHROW(solver.solve(
-            object_manager,
-            metricType(0.0),
-            metricType(0.01),
-            callback,
-            momento
-        ));
-        
-        // Проверяем стабильность: решение должно оставаться ограниченным и положительным
-        const auto& states = momento.getStateStorageByID(1).getStates();
-        
-        for (const auto& state : states) {
-            metricType y = state.getPosition().x();
-            
-            // Решение должно оставаться ограниченным и положительным для экспоненциального затухания
-            REQUIRE(y > metricType(0.0));
-            REQUIRE(y <= y0);
-            REQUIRE(std::isfinite(y));
-        }
+        REQUIRE((R_enu - Matrix3::Identity()).norm() < 1e-10);
+        REQUIRE(isProperRotationMatrix(R_enu, 1e-10));
     }
     
-    SECTION("Обработка граничных случаев") {
-        auto dynamics = createExponentialDecaySystem<metricType>(metricType(1.0));
+    SECTION("180 degree rotation about X axis in ENU") {
+        auto euler = EulerAngles::ZYX(0.0, 0.0, std::numbers::pi);
+        Matrix3 Rx_enu = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        auto object = std::make_shared<MockObject<metricType>>(
-            dynamics,
-            Eigen::Vector3<metricType>(metricType(1.0), metricType(0.0), metricType(0.0))
-        );
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object);
+        REQUIRE(isProperRotationMatrix(Rx_enu, 1e-10));
+    }
+    
+    SECTION("180 degree rotation about Y axis in ENU") {
+        auto euler = EulerAngles::ZYX(0.0, std::numbers::pi, 0.0);
+        Matrix3 Ry_enu = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        auto initial_state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(metricType(1.0), metricType(0.0), metricType(0.0)))
-            .build();
+        REQUIRE(isProperRotationMatrix(Ry_enu, 1e-10));
+    }
+    
+    SECTION("180 degree rotation about Z axis in ENU") {
+        auto euler = EulerAngles::ZYX(std::numbers::pi, 0.0, 0.0);
+        Matrix3 Rz_enu = eulerToDCM(euler, CoordinateFrame::ENU);
         
-        SimulationMomento<metricType> momento;
-        auto snapshot = ObjSnapshot<metricType>::createBuilder(initial_state)
-            .setTime(metricType(0.0)).setMass(metricType(1.0))
-            .setInertia(Eigen::Vector3<metricType>(metricType(1.0), metricType(1.0), metricType(1.0)))
-            .setTotalForce(Eigen::Vector3<metricType>::Zero())
-            .setTotalMoment(Eigen::Vector3<metricType>::Zero())
-            .setTotalForceEarth(Eigen::Vector3<metricType>::Zero())
-            .setTotalMomentEarth(Eigen::Vector3<metricType>::Zero())
-            .buildUnique();
+        REQUIRE(isProperRotationMatrix(Rz_enu, 1e-10));
+    }
+    
+    SECTION("90 degree rotations in ENU") {
+        double pi_2 = std::numbers::pi / 2.0;
         
-        momento.addSnapshotByID(1, std::move(snapshot));
+        auto euler_x = EulerAngles::ZYX(0.0, 0.0, pi_2);
+        Matrix3 Rx_90_enu = eulerToDCM(euler_x, CoordinateFrame::ENU);
+        REQUIRE(isProperRotationMatrix(Rx_90_enu, 1e-10));
         
-        // Очень малый размер шага
-        metricType dt_small = metricType(1e-6);
-        CallbackType callback = [](auto, metricType t) -> bool {
-            return t < metricType(0.001);
-        };
+        auto euler_y = EulerAngles::ZYX(0.0, pi_2, 0.0);
+        Matrix3 Ry_90_enu = eulerToDCM(euler_y, CoordinateFrame::ENU);
+        REQUIRE(isProperRotationMatrix(Ry_90_enu, 1e-10));
         
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_NOTHROW(solver.solve(
-            object_manager,
-            metricType(0.0),
-            dt_small,
-            callback,
-            momento
-        ));
-        
-        const auto& states = momento.getStateStorageByID(1).getStates();
-        const auto& final_state = states.back();
-        metricType result = final_state.getPosition().x();
-        
-        REQUIRE(std::isfinite(result));
-        REQUIRE(result > metricType(0.0));
+        auto euler_z = EulerAngles::ZYX(pi_2, 0.0, 0.0);
+        Matrix3 Rz_90_enu = eulerToDCM(euler_z, CoordinateFrame::ENU);
+        REQUIRE(isProperRotationMatrix(Rz_90_enu, 1e-10));
     }
 }
 
 ```
 
 
-### Файл: tests\unit\OdeSolver\runge_kutta4_solver_test.cpp
+### Файл: tests\unit\MathUtilities\test_rotation_compile_check.cpp
 ```cpp
+// Minimal compilation check for rotation matrix property test
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_approx.hpp>
-#include <memory>
-#include <map>
+#include "../../../include/math/FlightMath.h"
 
-// Тестируем ваш реальный RungeKutta4Solver
-#include "../../../src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.h"
-#include "../../../src/DynamicsSystem/IDynamicsSystem.h"
-#include "../../../src/utils/ObjManager/IObjectManager.h"
-#include "../../../src/SimulationMomento/SimulationMomento.h"
-#include "../../../src/PhysicalObjects/AbstractObject.h"
-
-// Подключаем моки
-#include "test_mocks.h"
-
-using namespace Catch;
-using metricType = float;
-
-// === МОКИ ДЛЯ ТЕСТИРОВАНИЯ ===
-// Используем моки из test_mocks.h
-
-// === ТЕСТЫ ВАШЕГО РЕАЛЬНОГО RUNGEКUTTA4SOLVER ===
-
-TEST_CASE("RungeKutta4Solver базовая функциональность", "[solver][rk4][integration]") {
-    using CallbackType = std::function<bool(std::shared_ptr<IObjectManager<metricType>>, metricType)>;
+TEST_CASE("Minimal rotation test", "[compile-check]") {
+    using namespace core::math;
     
-    SECTION("Решатель интегрирует экспоненциальное затухание") {
-        // Создаем мок системы динамики для y' = -y
-        auto dynamics = std::make_shared<MockDynamicsSystem<metricType>>(
-            [](const KinematicState<metricType>& state, metricType t) -> KinematicState<metricType> {
-                // Производная: позиция' = -позиция (экспоненциальное затухание)
-                return KinematicState<metricType>::createBuilder()
-                    .setPosition(-state.getPosition())
-                    .setVelocity(Eigen::Vector3<metricType>::Zero())
-                    .setEulerAngles(Eigen::Vector3<metricType>::Zero())
-                    .setAngularVelocity(Eigen::Vector3<metricType>::Zero())
-                    .build();
-            }
-        );
-        
-        // Создаем мок объекта
-        auto object = std::make_shared<MockObject<metricType>>(dynamics);
-        
-        // Создаем мок менеджера объектов
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object);
-        
-        // Создаем начальное состояние
-        auto initial_state = KinematicState<metricType>::createBuilder()
-            .setPosition(Eigen::Vector3<metricType>(1.0f, 0.0f, 0.0f))
-            .build();
-        
-        // Создаем SimulationMomento и добавляем начальное состояние
-        SimulationMomento<metricType> momento;
-        
-        // Инициализируем momento через saveStartParams
-        momento.saveStartParams(object_manager->getAllObjects());
-        
-        // Создаем колбэк остановки (остановиться после нескольких шагов)
-        int step_count = 0;
-        CallbackType callback = [&step_count](auto, metricType t) -> bool {
-            step_count++;
-            return step_count < 100 && t < 1.0f;  // Остановиться через 100 шагов или при t >= 1.0
-        };
-        
-        // Создаем и запускаем решатель
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_NOTHROW(solver.solve(
-            object_manager,
-            0.0f,      // t_start
-            0.01f,     // step_size
-            callback,
-            momento
-        ));
-        
-        // Проверяем результат
-        const auto& final_states = momento.getStateStorageByID(1).getStates();
-        REQUIRE(final_states.size() > 1);  // Должно быть больше одного состояния
-        
-        const auto& final_state = final_states.back();
-        metricType final_time = final_state.getTime();
-        metricType final_position = final_state.getPosition().x();
-        
-        // Аналитическое решение: y(t) = exp(-t)
-        metricType analytical = std::exp(-final_time);
-        
-        INFO("Время: " << final_time << ", Численное: " << final_position << ", Аналитическое: " << analytical);
-        REQUIRE(final_position == Approx(analytical).margin(1e-3f));
-    }
-}
-
-TEST_CASE("RungeKutta4Solver обработка ошибок", "[solver][rk4][error]") {
-    using CallbackType = std::function<bool(std::shared_ptr<IObjectManager<metricType>>, metricType)>;
+    auto euler = EulerAngles::ZYX(0.0, 0.0, 0.0);
+    Matrix3 R = eulerToDCM(euler, CoordinateFrame::ENU);
     
-    SECTION("Отрицательный шаг времени вызывает исключение") {
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        SimulationMomento<metricType> momento;
-        CallbackType callback = [](auto, auto) { return false; };
-        
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_THROWS_AS(solver.solve(
-            object_manager,
-            0.0f,
-            -0.01f,  // Отрицательный шаг
-            callback,
-            momento
-        ), std::invalid_argument);
-    }
-    
-    SECTION("Нулевой шаг времени вызывает исключение") {
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        SimulationMomento<metricType> momento;
-        CallbackType callback = [](auto, auto) { return false; };
-        
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_THROWS_AS(solver.solve(
-            object_manager,
-            0.0f,
-            0.0f,  // Нулевой шаг
-            callback,
-            momento
-        ), std::invalid_argument);
-    }
-    
-    SECTION("Отрицательное начальное время вызывает исключение") {
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        SimulationMomento<metricType> momento;
-        CallbackType callback = [](auto, auto) { return false; };
-        
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_THROWS_AS(solver.solve(
-            object_manager,
-            -1.0f,  // Отрицательное время
-            0.01f,
-            callback,
-            momento
-        ), std::invalid_argument);
-    }
-    
-    SECTION("Пустой менеджер объектов вызывает исключение") {
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();  // Пустой
-        SimulationMomento<metricType> momento;
-        CallbackType callback = [](auto, auto) { return false; };
-        
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_THROWS_AS(solver.solve(
-            object_manager,
-            0.0f,
-            0.01f,
-            callback,
-            momento
-        ), std::invalid_argument);
-    }
-}
-
-TEST_CASE("RungeKutta4Solver множественные объекты", "[solver][rk4][multiple]") {
-    using CallbackType = std::function<bool(std::shared_ptr<IObjectManager<metricType>>, metricType)>;
-    
-    SECTION("Решатель обрабатывает несколько объектов одновременно") {
-        // Создаем две разные системы динамики
-        auto dynamics1 = std::make_shared<MockDynamicsSystem<metricType>>(
-            [](const KinematicState<metricType>& state, metricType t) -> KinematicState<metricType> {
-                // Объект 1: y' = -y (затухание)
-                return KinematicState<metricType>::createBuilder()
-                    .setPosition(-state.getPosition())
-                    .build();
-            }
-        );
-        
-        auto dynamics2 = std::make_shared<MockDynamicsSystem<metricType>>(
-            [](const KinematicState<metricType>& state, metricType t) -> KinematicState<metricType> {
-                // Объект 2: y' = 0.5*y (рост)
-                return KinematicState<metricType>::createBuilder()
-                    .setPosition(0.5f * state.getPosition())
-                    .build();
-            }
-        );
-        
-        // Создаем объекты
-        auto object1 = std::make_shared<MockObject<metricType>>(dynamics1);
-        auto object2 = std::make_shared<MockObject<metricType>>(dynamics2);
-        
-        // Создаем менеджер объектов
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object1);
-        object_manager->addObject(2, object2);
-        
-        // Создаем SimulationMomento
-        SimulationMomento<metricType> momento;
-        
-        // Инициализируем momento через saveStartParams
-        momento.saveStartParams(object_manager->getAllObjects());
-        
-        // Колбэк остановки
-        int step_count = 0;
-        CallbackType callback = [&step_count](auto, metricType t) -> bool {
-            step_count++;
-            return step_count < 50 && t < 0.5f;
-        };
-        
-        // Запускаем решатель
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_NOTHROW(solver.solve(
-            object_manager,
-            0.0f,
-            0.01f,
-            callback,
-            momento
-        ));
-        
-        // Проверяем результаты для обоих объектов
-        const auto& states1 = momento.getStateStorageByID(1).getStates();
-        const auto& states2 = momento.getStateStorageByID(2).getStates();
-        
-        REQUIRE(states1.size() > 1);
-        REQUIRE(states2.size() > 1);
-        REQUIRE(states1.size() == states2.size());  // Одинаковое количество шагов
-        
-        const auto& final1 = states1.back();
-        const auto& final2 = states2.back();
-        
-        metricType t_final = final1.getTime();
-        
-        // Проверяем аналитические решения
-        metricType analytical1 = 1.0f * std::exp(-t_final);      // y1' = -y1, y1(0) = 1
-        metricType analytical2 = 2.0f * std::exp(0.5f * t_final); // y2' = 0.5*y2, y2(0) = 2
-        
-        INFO("Время: " << t_final);
-        INFO("Объект 1 - Численное: " << final1.getPosition().x() << ", Аналитическое: " << analytical1);
-        INFO("Объект 2 - Численное: " << final2.getPosition().x() << ", Аналитическое: " << analytical2);
-        
-        REQUIRE(final1.getPosition().x() == Approx(analytical1).margin(1e-3f));
-        REQUIRE(final2.getPosition().x() == Approx(analytical2).margin(1e-3f));
-    }
-}
-
-TEST_CASE("RungeKutta4Solver неактивные объекты", "[solver][rk4][inactive]") {
-    using CallbackType = std::function<bool(std::shared_ptr<IObjectManager<metricType>>, metricType)>;
-    
-    SECTION("Неактивные объекты не интегрируются") {
-        auto dynamics = std::make_shared<MockDynamicsSystem<metricType>>(
-            [](const KinematicState<metricType>& state, metricType t) -> KinematicState<metricType> {
-                // Эта функция не должна вызываться для неактивного объекта
-                FAIL("Система динамики вызвана для неактивного объекта!");
-                return state;
-            }
-        );
-        
-        // Создаем неактивный объект
-        auto object = std::make_shared<MockObject<metricType>>(
-            dynamics,
-            Eigen::Vector3<metricType>(metricType(1.0), metricType(0.0), metricType(0.0)),
-            false  // false = неактивный
-        );
-        
-        auto object_manager = std::make_shared<MockObjectManager<metricType>>();
-        object_manager->addObject(1, object);
-        
-        SimulationMomento<metricType> momento;
-        
-        // Инициализируем momento через saveStartParams
-        momento.saveStartParams(object_manager->getAllObjects());
-        
-        int step_count = 0;
-        CallbackType callback = [&step_count](auto, auto) -> bool {
-            step_count++;
-            return step_count < 10;  // Несколько шагов
-        };
-        
-        RungeKutta4Solver<metricType, CallbackType> solver;
-        
-        REQUIRE_NOTHROW(solver.solve(
-            object_manager,
-            0.0f,
-            0.01f,
-            callback,
-            momento
-        ));
-        
-        // Проверяем, что состояние не изменилось
-        const auto& states = momento.getStateStorageByID(1).getStates();
-        REQUIRE(states.size() > 1);  // Должны быть добавлены копии состояния
-        
-        // Все состояния должны быть одинаковыми (объект неактивен)
-        for (const auto& state : states) {
-            REQUIRE(state.getPosition().x() == Approx(1.0f).margin(1e-6f));
-        }
-    }
+    REQUIRE(R.determinant() > 0.0);
 }
 
 ```
@@ -6614,11 +6704,11 @@ TEST_CASE("RungeKutta4Solver неактивные объекты", "[solver][rk4
 ### Файл: config\simulation.json
 ```cpp
 {
-  "operator_name" : "Ilya Berulava",
-  "ode_solver" : "RK-4",
-  "world_config" : "Simple world",
-  "data_saver" : "txt",
-  "earth_type" : "flat earth",
+  "operator_name": "Ilya Berulava",
+  "ode_solver": "RK-4",
+  "world_config": "Simple world",
+  "data_saver": "txt",
+  "earth_type": "flat earth",
   "time_step": 0.01,
   "max_time": 5.0,
   "output_csv": "../data/output/results_data/simulation_data.csv",
@@ -6632,47 +6722,10 @@ TEST_CASE("RungeKutta4Solver неактивные объекты", "[solver][rk4
   "Izz": "../data/input/dataTables/golubka_V1/Inertion/Iz_t.txt",
 
   "position": [0.0, 0.0, 0.0],
-  "velocity": [
-    50.0,
-    0.0,
-    0.0
-  ],
-  "euler": [0.2617994, 0.0, 0.0],
-  "angular_velocity": [0.0, 0.08726646, 0.0]
+  "velocity": [48.3, 0.0, 12.9],
+  "euler": [0.0, 0.2618, 0.0],
+  "angular_velocity": [0.0, 0.0, 0.0]
 }
 
-
-```
-
-
-### Файл: config\simulation_build.json
-```cpp
-{
-  "operator_name" : "Ilya Berulava",
-  "ode_solver" : "RK-4",
-  "world_config" : "Simple world",
-  "data_saver" : "txt",
-  "earth_type" : "flat earth",
-  "time_step": 0.01,
-  "max_time": 5.0,
-  "output_csv": "../../data/output/results_data/simulation_data.csv",
-
-  "thrust_x": "../../data/input/dataTables/golubka_V1/Thrusts/Thrust_x_t.txt",
-  "thrust_y": "../../data/input/dataTables/golubka_V1/Thrusts/Thrust_y_t.txt",
-  "thrust_z": "../../data/input/dataTables/golubka_V1/Thrusts/Thrust_z_t.txt",
-  "mass": "../../data/input/dataTables/golubka_V1/Mass_t.txt",
-  "Ixx": "../../data/input/dataTables/golubka_V1/Inertion/Ix_t.txt",
-  "Iyy": "../../data/input/dataTables/golubka_V1/Inertion/Iy_t.txt",
-  "Izz": "../../data/input/dataTables/golubka_V1/Inertion/Iz_t.txt",
-
-  "position": [0.0, 0.0, 0.0],
-  "velocity": [
-    50.0,
-    0.0,
-    0.0
-  ],
-  "euler": [0.2617994, 0.0, 0.0],
-  "angular_velocity": [0.0, 0.08726646, 0.0]
-}
 ```
 

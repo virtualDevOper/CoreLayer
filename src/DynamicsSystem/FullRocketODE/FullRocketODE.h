@@ -1,8 +1,31 @@
 #pragma once
 #include "../IDynamicsSystem.h"
-#include "../../utils/ConeDirection/ConeDirection.h"
+#include "../../../include/math/FlightMath.h"
 #include "../../utils/DynamicParametersProviderForFullRocketModel.h"
 #include "../../WorldModel/AbstractWorldModel.h"
+
+/**
+ * CONVENTION (ENU - East-North-Up):
+ *
+ * Earth frame (ENU):
+ *   X_e → East  (горизонтально вправо)
+ *   Y_e → North (горизонтально вперёд)
+ *   Z_e ↑ Up    (вертикально вверх) ← КЛЮЧЕВОЙ ПРИЗНАК ENU
+ *   Gravity: (0, 0, -mg)
+ *
+ * Body frame (связанная СК ракеты):
+ *   X_b → Nose (нос ракеты)
+ *   Y_b → Right wing (правый борт)
+ *   Z_b ↓ Down (вниз, для правой системы: X × Y = Z)
+ *
+ * Euler angles vector: [psi, theta, gamma]
+ *   euler[0] = psi   (yaw/курс)   — поворот вокруг Z_e
+ *   euler[1] = theta (pitch/тангаж) — поворот вокруг Y'
+ *   euler[2] = gamma (roll/крен)   — поворот вокруг X''
+ *
+ * Rotation sequence: 3-2-1 (ZYX)
+ *   R_body_to_earth = Rz(psi) · Ry(theta) · Rx(gamma)
+ */
 
 /**
  * \brief Full 6DOF rigid body dynamics system for rockets/aircraft.
@@ -24,58 +47,45 @@ private:
 
 public:
     explicit FullRocketODE(
-        const std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
-        const std::shared_ptr<AbstractWorldModel<metricType>> world
+        std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
+        std::shared_ptr<AbstractWorldModel<metricType>> world
     );
 
     std::string get_description() const override;
 
-    std::unique_ptr<KinematicState<metricType>> get_rhs_derivatives(
-        const KinematicState<metricType>& kinematics,
+    std::unique_ptr<KinematicStateDerivative<metricType>> get_rhs_derivatives(
+        const KinematicState<metricType>& state,
         metricType t
     ) override;
 
     std::unique_ptr<ObjSnapshot<metricType>> augmentSnapshot(
-        const KinematicState<metricType>& kinematics,
+        const KinematicState<metricType>& state,
         metricType t
     ) const override;
 
 private:
-    // Coordinate frame transformations
-    Eigen::Vector3<metricType> transformVelocityEarthToBody(
-        const Eigen::Vector3<metricType>& V_earth,
-        const Eigen::Vector3<metricType>& euler) const;
 
-    Eigen::Vector3<metricType> transformAccelerationBodyToEarth(
-        const Eigen::Vector3<metricType>& a_body,
-        const Eigen::Vector3<metricType>& V_body,
-        const Eigen::Vector3<metricType>& omega,
-        const Eigen::Vector3<metricType>& euler) const;
-
-    // Physics calculations
     metricType computeSpaceAngleOfAttack(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeAerodynamicRollAngle(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeMachNumber(metricType V_magnitude, const Eigen::Vector3<metricType>& position) const;
     metricType computeAirDensity(const Eigen::Vector3<metricType>& position) const;
     
-    Eigen::Vector3<metricType> computeTotalForces(
-        const Eigen::Vector3<metricType>& F_aero,
-        const Eigen::Vector3<metricType>& F_thrust,
-        metricType mass,
-        const Eigen::Vector3<metricType>& euler) const;
+    Eigen::Vector3<metricType> computeTotalForcesENU(
+    const Eigen::Vector3<metricType>& F_aero_body,
+    const Eigen::Vector3<metricType>& F_thrust_body,
+    metricType mass,
+    const core::math::Matrix3& dcm) const;
 
-    Eigen::Vector3<metricType> computeLinearAccelerationBody(
-        const Eigen::Vector3<metricType>& V_body,
-        const Eigen::Vector3<metricType>& omega,
+    Eigen::Vector3<metricType> computeLinearAccelerationENU(
         const Eigen::Vector3<metricType>& F_sum,
         metricType mass) const;
 
     Eigen::Vector3<metricType> computeEulerAnglesDerivatives(
         const Eigen::Vector3<metricType>& euler,
-        const Eigen::Vector3<metricType>& omega) const;
+        const Eigen::Vector3<metricType>& angularVelocity) const;
 
     Eigen::Vector3<metricType> computeAngularAccelerationBody(
         const Eigen::Vector3<metricType>& M_sum,
         const Eigen::Vector3<metricType>& inertia,
-        const Eigen::Vector3<metricType>& omega) const;
+        const Eigen::Vector3<metricType>& angularVelocity) const;
 };
