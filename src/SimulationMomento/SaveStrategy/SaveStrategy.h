@@ -11,6 +11,7 @@ public:
     virtual ~SaveStrategy() = default;
     virtual void save(const std::vector<StateStorage<metricType>>& data) = 0;
 };
+
 template <typename metricType>
 class CsvSaveStrategy final : public SaveStrategy<metricType> {
 public:
@@ -45,7 +46,7 @@ private:
     }
 
     void saveSingleStorage(const StateStorage<metricType>& storage) {
-        int objectId = storage.getId();
+        const int objectId = storage.getId();
         const auto& states = storage.getStates();
         if (states.empty()) {
             return;

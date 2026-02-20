@@ -42,6 +42,9 @@ SimulationConfig SimulationConfig::loadFromJsonFile(const std::string& path) {
     cfg.Ixx_path = extractString(json, "Ixx", "");
     cfg.Iyy_path = extractString(json, "Iyy", "");
     cfg.Izz_path = extractString(json, "Izz", "");
+    cfg.COM_x_path = extractString(json, "COM_x", "");
+    cfg.COM_y_path = extractString(json, "COM_y", "");
+    cfg.COM_z_path = extractString(json, "COM_z", "");
 
     // Глобальные параметры симуляции
     cfg.time_step = extractFloat(json, "time_step", cfg.time_step);

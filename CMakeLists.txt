@@ -9,6 +9,8 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 # Добавляем директории для поиска заголовочных файлов
 include_directories(${CMAKE_SOURCE_DIR}/include/core)
 include_directories(${CMAKE_SOURCE_DIR}/libs/eigen-3.4.0)
+include_directories(${CMAKE_SOURCE_DIR}/libs)
+include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/src)
 
 
@@ -52,10 +54,6 @@ add_executable(CoreLayer main.cpp
         src/PhysicalObjects/AbstractObject.h
         src/PhysicalObjects/AbstractObject.cpp
         src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModel.cpp
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModel.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModelAdapter.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/RocketAeroInput.h
         src/utils/ObjInitParams.h
         src/utils/ObjManager/ObjectManager.h
         src/utils/SimulationDescriber.h
@@ -80,8 +78,7 @@ add_executable(CoreLayer main.cpp
         src/utils/Interpolation/ComponentInterpolationManager.h
         src/utils/DynamicParametersProviderForFullRocketModel.h
         src/utils/ObjManager/IObjectManager.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/IAeroModel.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/SimpleAeroModel.h
+
         src/utils/KinematicState/KinematicState.h
         src/utils/KinematicState/KinematicState.cpp
         src/utils/SimulationConfig.cpp
@@ -89,13 +86,12 @@ add_executable(CoreLayer main.cpp
         src/utils/IParameterProvider.h
         src/utils/KinematicStateDerivative/KinematicStateDerivative.cpp
         src/utils/KinematicStateDerivative/KinematicStateDerivative.h
+        
+        # Aerodynamics library sources
+        include/aero_simpi/src/component.cpp
+        include/aero_simpi/src/model.cpp
+        include/aero_simpi/src/parser.cpp
 )
-
-# Add tests subdirectory
-option(BUILD_TESTS "Build tests" ON)
-if(BUILD_TESTS)
-    add_subdirectory(tests)
-endif()
 
 
 

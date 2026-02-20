@@ -29,4 +29,6 @@ public:
 
     // Получение вектора тяги в момент времени t
     [[nodiscard]] virtual Eigen::Vector3<metricType> getThrust(metricType t) const = 0;
+
+    [[nodiscard]] virtual Eigen::Vector3<metricType> getCOM(metricType t) const = 0;
 };

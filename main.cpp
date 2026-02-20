@@ -9,8 +9,7 @@
 #include "src/WorldModel/WorldComponents/WindModel/NoWindModel/NoWindModel.h"
 #include "PCH.h"
 #include "src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.h"
-#include "src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/RocketAeroInput.h"
-#include "src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModelAdapter.h"
+
 #include "src/SimulationMomento/SimulationMomento.h"
 #include "src/utils/SimulationDescriber.h"
 #include "src/utils/ContinuationCallback.h"
@@ -23,6 +22,7 @@
 #include "src/utils/DynamicParametersProviderForFullRocketModel.h"
 #include "src/utils/ObjManager/ObjectManager.h"
 #include "src/utils/SimulationConfig.h"
+#include "include/aero_simpi/aerodynamics.h"
 
 auto loadDataTable = [](const std::string& filename) {
     try {
@@ -92,6 +92,10 @@ int main() {
         auto Ixx_data = loadDataTable(config.Ixx_path);
         auto Iyy_data = loadDataTable(config.Iyy_path);
         auto Izz_data = loadDataTable(config.Izz_path);
+        // После загрузки Izz_data добавь:
+        auto x_com_data = loadDataTable(config.COM_x_path);
+        auto y_com_data = loadDataTable(config.COM_y_path);
+        auto z_com_data = loadDataTable(config.COM_z_path);
 
         // === ШАГ 4:СОЗДАТЬ И ИНИЦИАЛИЗИРОВАТЬ интерполятор ===
         resource_manager.golubka_V1_interp_mgr = std::make_shared<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
@@ -99,6 +103,11 @@ int main() {
             std::move(Thrust_x_t_data),
             std::move(Thrust_y_t_data),
             std::move(Thrust_z_t_data)
+        );
+        resource_manager.golubka_V1_interp_mgr->setCOM(
+            std::move(x_com_data),
+            std::move(y_com_data),
+            std::move(z_com_data)
         );
 
         resource_manager.golubka_V1_interp_mgr->setMass(std::move(mass_data));
@@ -114,31 +123,7 @@ int main() {
         );
 
         // === ШАГ 6: ЗАПОЛНЕНИЕ АЭРОДИНАМИЧЕСКИХ ПАРАМЕТРОВ ===
-        auto golubka_V1_aero_input = std::make_unique<RocketAeroInput<GLOBAL_CONFIG::PROJECT_TYPE>>();
-        golubka_V1_aero_input->rudder_count = 4;
-        golubka_V1_aero_input->D_mid = 0.07f;
-        golubka_V1_aero_input->L = 0.5f;
-        golubka_V1_aero_input->L_har = 0.45f;
-        golubka_V1_aero_input->Xdp = 0.4f;
-        golubka_V1_aero_input->Xdst = 0.45f;
-        golubka_V1_aero_input->L_sum_kr = 0.251f;
-        golubka_V1_aero_input->b_0_kr = 0.0355f;
-        golubka_V1_aero_input->b_1_kr = 0.0355f;
-        golubka_V1_aero_input->hi_st = 0.45f;
-        golubka_V1_aero_input->d_kr = 0.01f;
-        golubka_V1_aero_input->S_kr = 0.005f;
-        golubka_V1_aero_input->l2_kr = 0.251f;
-        golubka_V1_aero_input->X_p_kr_st = 0.45f;
-        golubka_V1_aero_input->L_sum_p = 0.1f;
-        golubka_V1_aero_input->b_0_p = 0.02f;
-        golubka_V1_aero_input->b_1_p = 0.02f;
-        golubka_V1_aero_input->hi_p = 0.45f;
-        golubka_V1_aero_input->d_p = 0.005f;
-        golubka_V1_aero_input->S_p = 0.002f;
-        golubka_V1_aero_input->l_2_p = 0.4f;
-        golubka_V1_aero_input->X_p_kr_p = 0.4f;
-        golubka_V1_aero_input->X_ov_p = 0.4f;
-        golubka_V1_aero_input->b_sah_p = 0.01f;
+
 
         // === ШАГ 7: НАЧАЛЬНЫЕ УСЛОВИЯ (50 м/с под 15°, угловая скорость 5 град/с по тангажу) ===
         auto golubka_V1_init_params = std::make_unique<ObjInitParams<GLOBAL_CONFIG::PROJECT_TYPE>>();
@@ -147,24 +132,20 @@ int main() {
         golubka_V1_init_params->eulerAngles = config.rocket_init.euler.cast<GLOBAL_CONFIG::PROJECT_TYPE>();
         golubka_V1_init_params->angularVelocity = config.rocket_init.angular_velocity.cast<GLOBAL_CONFIG::PROJECT_TYPE>();
 
-        // === ШАГ 8: СОЗДАНИЕ СИСТЕМЫ И РАКЕТЫ ===
+        // === ШАГ 8: ЗАГРУЗКА АЭРОДИНАМИЧЕСКОЙ МОДЕЛИ ===
+        auto aero_model = aero::AerodynamicsModel::createFromFile("../config/aerodynamics_rocket_1m.json");
+        
+        // === ШАГ 9: СОЗДАНИЕ СИСТЕМЫ И РАКЕТЫ ===
         auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(
             paramsProvider,
-            resource_manager.world
-        );
-
-        // Аэродинамическая модель подключается через интерфейс IAeroModel (DI)
-        auto aero_model = std::make_shared<FullAeroModelAdapter<GLOBAL_CONFIG::PROJECT_TYPE>>(
-            *golubka_V1_aero_input,
-            resource_manager.golubka_V1_interp_mgr
+            resource_manager.world,
+            aero_model
         );
 
         resource_manager.golubka_V1 = std::make_shared<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>>(
             std::move(golubka_V1_system),
             std::move(golubka_V1_init_params),
-            std::move(golubka_V1_aero_input),
-            std::weak_ptr<IParameterProvider<GLOBAL_CONFIG::PROJECT_TYPE>>(resource_manager.golubka_V1_interp_mgr),
-            aero_model
+            std::weak_ptr<IParameterProvider<GLOBAL_CONFIG::PROJECT_TYPE>>(resource_manager.golubka_V1_interp_mgr)
         );
 
         // === ШАГ 9: КРИТИЧЕСКИ ВАЖНО — ПРАВИЛЬНЫЙ ТИП КОЛБЭКА ===
@@ -212,10 +193,6 @@ int main() {
 
         model.run();
 
-        // === ШАГ 14: ЯВНОЕ СОХРАНЕНИЕ ===
-        if (resource_manager.csvDataSaver) {
-            resource_manager.csvDataSaver->save();
-        }
     }
     catch (const std::exception& e) {
         std::cerr << "Main error: " << e.what() << std::endl;

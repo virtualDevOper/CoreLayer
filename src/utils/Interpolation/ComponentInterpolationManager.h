@@ -27,6 +27,11 @@ private:
     std::unique_ptr<ILinearInterpolator<metricType>> inertia_y_;
     std::unique_ptr<ILinearInterpolator<metricType>> inertia_z_;
 
+    // === ЦЕНТР МАСС ===
+    std::unique_ptr<ILinearInterpolator<metricType>> COM_x_;
+    std::unique_ptr<ILinearInterpolator<metricType>> COM_y_;
+    std::unique_ptr<ILinearInterpolator<metricType>> COM_z_;
+
     // === ТЯГА ОТ ДВИГАТЕЛЕЙ ===
     std::unique_ptr<ILinearInterpolator<metricType>> thrust_x_;
     std::unique_ptr<ILinearInterpolator<metricType>> thrust_y_;
@@ -52,6 +57,16 @@ public:
     void setMass(std::unique_ptr<ILinearInterpolator<metricType>> interp) {
         mass_ = std::move(interp);
     }
+
+    void setCOM(
+        std::unique_ptr<ILinearInterpolator<metricType>> x_COM,
+        std::unique_ptr<ILinearInterpolator<metricType>> y_COM,
+        std::unique_ptr<ILinearInterpolator<metricType>> z_COM) {
+        COM_x_ = std::move(x_COM);
+        COM_y_ = std::move(y_COM);
+        COM_z_ = std::move(z_COM);
+    }
+
 
     void setInertia(
         std::unique_ptr<ILinearInterpolator<metricType>> ix,
@@ -99,6 +114,17 @@ public:
         if (!mass_) throw std::runtime_error("Интерполятор массы не установлен");
         return mass_->interpolate(t);
     }
+
+    [[nodiscard]] Eigen::Vector3<metricType> getCOM(metricType t) const override {
+        if (!COM_x_) throw std::runtime_error("Интерполятор COM не установлен");
+        return Eigen::Vector3<metricType>(
+            COM_x_->interpolate(t),
+            COM_y_->interpolate(t),
+            COM_z_->interpolate(t)
+        );
+    }
+
+
 
     [[nodiscard]] Eigen::Vector3<metricType> getInertia(metricType t) const override {
         if (!inertia_x_ || !inertia_y_ || !inertia_z_)

@@ -28,6 +28,19 @@ public:
     [[nodiscard]] const Eigen::Vector3<metricType>& getInertia() const;
     [[nodiscard]] const Eigen::Vector3<metricType>& getTotalForce() const;
     [[nodiscard]] const Eigen::Vector3<metricType>& getTotalMoment() const;
+    
+    // === ГЕТТЕРЫ АЭРОДИНАМИЧЕСКИХ КОЭФФИЦИЕНТОВ ===
+    [[nodiscard]] metricType getAeroCx() const;
+    [[nodiscard]] metricType getAeroCy() const;
+    [[nodiscard]] metricType getAeroCz() const;
+    [[nodiscard]] metricType getAeroMx() const;
+    [[nodiscard]] metricType getAeroMy() const;
+    [[nodiscard]] metricType getAeroMz() const;
+    [[nodiscard]] metricType getAeroAlpha() const;
+    [[nodiscard]] metricType getAeroBeta() const;
+    [[nodiscard]] metricType getAeroMach() const;
+    [[nodiscard]] metricType getAeroXcp() const;
+    [[nodiscard]] metricType getAeroStaticMargin() const;
 
     // === ДОСТУП К КИНЕМАТИКЕ ===
     [[nodiscard]] const KinematicState<metricType>& getKinematics() const;
@@ -41,6 +54,19 @@ public:
         Eigen::Vector3<metricType> inertia_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
         Eigen::Vector3<metricType> totalForce_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
         Eigen::Vector3<metricType> totalMoment_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
+        
+        // Аэродинамические коэффициенты
+        metricType aero_Cx_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_Cy_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_Cz_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_mx_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_my_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_mz_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_alpha_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_beta_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_mach_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_x_cp_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_static_margin_ = std::numeric_limits<metricType>::quiet_NaN();
 
     public:
         explicit Builder(const KinematicState<metricType>& kinematics) : kinematics_(kinematics) {}
@@ -52,6 +78,20 @@ public:
         Builder& setInertia(const Eigen::Vector3<metricType>& i);
         Builder& setTotalForce(const Eigen::Vector3<metricType>& f);
         Builder& setTotalMoment(const Eigen::Vector3<metricType>& m);
+        
+        // Методы для установки аэродинамических коэффициентов
+        Builder& setAeroCx(metricType cx);
+        Builder& setAeroCy(metricType cy);
+        Builder& setAeroCz(metricType cz);
+        Builder& setAeroMx(metricType mx);
+        Builder& setAeroMy(metricType my);
+        Builder& setAeroMz(metricType mz);
+        Builder& setAeroAlpha(metricType alpha);
+        Builder& setAeroBeta(metricType beta);
+        Builder& setAeroMach(metricType mach);
+        Builder& setAeroXcp(metricType x_cp);
+        Builder& setAeroStaticMargin(metricType static_margin);
+        
         [[nodiscard]] std::unique_ptr<ObjSnapshot<metricType>> buildUnique() const;
     };
     static Builder createBuilder(const KinematicState<metricType>& kinematics);
@@ -66,4 +106,17 @@ private:
     Eigen::Vector3<metricType> inertia_;
     Eigen::Vector3<metricType> totalForce_;
     Eigen::Vector3<metricType> totalMoment_;
+    
+    // Аэродинамические коэффициенты
+    metricType aero_Cx_;
+    metricType aero_Cy_;
+    metricType aero_Cz_;
+    metricType aero_mx_;
+    metricType aero_my_;
+    metricType aero_mz_;
+    metricType aero_alpha_;
+    metricType aero_beta_;
+    metricType aero_mach_;
+    metricType aero_x_cp_;
+    metricType aero_static_margin_;
 };

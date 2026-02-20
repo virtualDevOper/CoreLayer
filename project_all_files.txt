@@ -1,5 +1,5 @@
 # CoreLayer - Полный код проекта
-# Сгенерировано: 2026-02-09 12:31:00
+# Сгенерировано: 2026-03-04 15:43:38
 # ==========================================
 
 
@@ -16,8 +16,7 @@
 #include "src/WorldModel/WorldComponents/WindModel/NoWindModel/NoWindModel.h"
 #include "PCH.h"
 #include "src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.h"
-#include "src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/RocketAeroInput.h"
-#include "src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModelAdapter.h"
+
 #include "src/SimulationMomento/SimulationMomento.h"
 #include "src/utils/SimulationDescriber.h"
 #include "src/utils/ContinuationCallback.h"
@@ -30,6 +29,7 @@
 #include "src/utils/DynamicParametersProviderForFullRocketModel.h"
 #include "src/utils/ObjManager/ObjectManager.h"
 #include "src/utils/SimulationConfig.h"
+#include "include/aero_simpi/aerodynamics.h"
 
 auto loadDataTable = [](const std::string& filename) {
     try {
@@ -99,6 +99,10 @@ int main() {
         auto Ixx_data = loadDataTable(config.Ixx_path);
         auto Iyy_data = loadDataTable(config.Iyy_path);
         auto Izz_data = loadDataTable(config.Izz_path);
+        // После загрузки Izz_data добавь:
+        auto x_com_data = loadDataTable(config.COM_x_path);
+        auto y_com_data = loadDataTable(config.COM_y_path);
+        auto z_com_data = loadDataTable(config.COM_z_path);
 
         // === ШАГ 4:СОЗДАТЬ И ИНИЦИАЛИЗИРОВАТЬ интерполятор ===
         resource_manager.golubka_V1_interp_mgr = std::make_shared<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
@@ -106,6 +110,11 @@ int main() {
             std::move(Thrust_x_t_data),
             std::move(Thrust_y_t_data),
             std::move(Thrust_z_t_data)
+        );
+        resource_manager.golubka_V1_interp_mgr->setCOM(
+            std::move(x_com_data),
+            std::move(y_com_data),
+            std::move(z_com_data)
         );
 
         resource_manager.golubka_V1_interp_mgr->setMass(std::move(mass_data));
@@ -121,31 +130,7 @@ int main() {
         );
 
         // === ШАГ 6: ЗАПОЛНЕНИЕ АЭРОДИНАМИЧЕСКИХ ПАРАМЕТРОВ ===
-        auto golubka_V1_aero_input = std::make_unique<RocketAeroInput<GLOBAL_CONFIG::PROJECT_TYPE>>();
-        golubka_V1_aero_input->rudder_count = 4;
-        golubka_V1_aero_input->D_mid = 0.07f;
-        golubka_V1_aero_input->L = 0.5f;
-        golubka_V1_aero_input->L_har = 0.45f;
-        golubka_V1_aero_input->Xdp = 0.4f;
-        golubka_V1_aero_input->Xdst = 0.45f;
-        golubka_V1_aero_input->L_sum_kr = 0.251f;
-        golubka_V1_aero_input->b_0_kr = 0.0355f;
-        golubka_V1_aero_input->b_1_kr = 0.0355f;
-        golubka_V1_aero_input->hi_st = 0.45f;
-        golubka_V1_aero_input->d_kr = 0.01f;
-        golubka_V1_aero_input->S_kr = 0.005f;
-        golubka_V1_aero_input->l2_kr = 0.251f;
-        golubka_V1_aero_input->X_p_kr_st = 0.45f;
-        golubka_V1_aero_input->L_sum_p = 0.1f;
-        golubka_V1_aero_input->b_0_p = 0.02f;
-        golubka_V1_aero_input->b_1_p = 0.02f;
-        golubka_V1_aero_input->hi_p = 0.45f;
-        golubka_V1_aero_input->d_p = 0.005f;
-        golubka_V1_aero_input->S_p = 0.002f;
-        golubka_V1_aero_input->l_2_p = 0.4f;
-        golubka_V1_aero_input->X_p_kr_p = 0.4f;
-        golubka_V1_aero_input->X_ov_p = 0.4f;
-        golubka_V1_aero_input->b_sah_p = 0.01f;
+
 
         // === ШАГ 7: НАЧАЛЬНЫЕ УСЛОВИЯ (50 м/с под 15°, угловая скорость 5 град/с по тангажу) ===
         auto golubka_V1_init_params = std::make_unique<ObjInitParams<GLOBAL_CONFIG::PROJECT_TYPE>>();
@@ -154,24 +139,20 @@ int main() {
         golubka_V1_init_params->eulerAngles = config.rocket_init.euler.cast<GLOBAL_CONFIG::PROJECT_TYPE>();
         golubka_V1_init_params->angularVelocity = config.rocket_init.angular_velocity.cast<GLOBAL_CONFIG::PROJECT_TYPE>();
 
-        // === ШАГ 8: СОЗДАНИЕ СИСТЕМЫ И РАКЕТЫ ===
+        // === ШАГ 8: ЗАГРУЗКА АЭРОДИНАМИЧЕСКОЙ МОДЕЛИ ===
+        auto aero_model = aero::AerodynamicsModel::createFromFile("../config/aerodynamics_rocket_1m.json");
+        
+        // === ШАГ 9: СОЗДАНИЕ СИСТЕМЫ И РАКЕТЫ ===
         auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(
             paramsProvider,
-            resource_manager.world
-        );
-
-        // Аэродинамическая модель подключается через интерфейс IAeroModel (DI)
-        auto aero_model = std::make_shared<FullAeroModelAdapter<GLOBAL_CONFIG::PROJECT_TYPE>>(
-            *golubka_V1_aero_input,
-            resource_manager.golubka_V1_interp_mgr
+            resource_manager.world,
+            aero_model
         );
 
         resource_manager.golubka_V1 = std::make_shared<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>>(
             std::move(golubka_V1_system),
             std::move(golubka_V1_init_params),
-            std::move(golubka_V1_aero_input),
-            std::weak_ptr<IParameterProvider<GLOBAL_CONFIG::PROJECT_TYPE>>(resource_manager.golubka_V1_interp_mgr),
-            aero_model
+            std::weak_ptr<IParameterProvider<GLOBAL_CONFIG::PROJECT_TYPE>>(resource_manager.golubka_V1_interp_mgr)
         );
 
         // === ШАГ 9: КРИТИЧЕСКИ ВАЖНО — ПРАВИЛЬНЫЙ ТИП КОЛБЭКА ===
@@ -219,10 +200,6 @@ int main() {
 
         model.run();
 
-        // === ШАГ 14: ЯВНОЕ СОХРАНЕНИЕ ===
-        if (resource_manager.csvDataSaver) {
-            resource_manager.csvDataSaver->save();
-        }
     }
     catch (const std::exception& e) {
         std::cerr << "Main error: " << e.what() << std::endl;
@@ -250,6 +227,8 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 # Добавляем директории для поиска заголовочных файлов
 include_directories(${CMAKE_SOURCE_DIR}/include/core)
 include_directories(${CMAKE_SOURCE_DIR}/libs/eigen-3.4.0)
+include_directories(${CMAKE_SOURCE_DIR}/libs)
+include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/src)
 
 
@@ -293,10 +272,6 @@ add_executable(CoreLayer main.cpp
         src/PhysicalObjects/AbstractObject.h
         src/PhysicalObjects/AbstractObject.cpp
         src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModel.cpp
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModel.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/FullAeroModel/FullAeroModelAdapter.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/AeroInput/RocketAeroInput.h
         src/utils/ObjInitParams.h
         src/utils/ObjManager/ObjectManager.h
         src/utils/SimulationDescriber.h
@@ -321,8 +296,7 @@ add_executable(CoreLayer main.cpp
         src/utils/Interpolation/ComponentInterpolationManager.h
         src/utils/DynamicParametersProviderForFullRocketModel.h
         src/utils/ObjManager/IObjectManager.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/IAeroModel.h
-        src/DynamicsSystem/ExtensionModels/Aerodinamics/SimpleAeroModel.h
+
         src/utils/KinematicState/KinematicState.h
         src/utils/KinematicState/KinematicState.cpp
         src/utils/SimulationConfig.cpp
@@ -330,13 +304,12 @@ add_executable(CoreLayer main.cpp
         src/utils/IParameterProvider.h
         src/utils/KinematicStateDerivative/KinematicStateDerivative.cpp
         src/utils/KinematicStateDerivative/KinematicStateDerivative.h
+        
+        # Aerodynamics library sources
+        include/aero_simpi/src/component.cpp
+        include/aero_simpi/src/model.cpp
+        include/aero_simpi/src/parser.cpp
 )
-
-# Add tests subdirectory
-option(BUILD_TESTS "Build tests" ON)
-if(BUILD_TESTS)
-    add_subdirectory(tests)
-endif()
 
 
 
@@ -461,6 +434,12 @@ namespace PhysicsConstants {
     constexpr GLOBAL_CONFIG::PROJECT_TYPE earthMass = 5.972e24;      // Масса Земли [кг]
 }
 
+namespace MathConstants {
+    constexpr GLOBAL_CONFIG::PROJECT_TYPE PI = 3.14159265358979323846;
+    constexpr GLOBAL_CONFIG::PROJECT_TYPE DEG_TO_RAD = PI / 180.0;  // Конвертация градусов в радианы
+    constexpr GLOBAL_CONFIG::PROJECT_TYPE RAD_TO_DEG = 180.0 / PI;  // Конвертация радианов в градусы
+}
+
 ```
 
 
@@ -468,8 +447,8 @@ namespace PhysicsConstants {
 ```cpp
 
 #pragma once
-#include <functional>
-#include <memory>
+
+#include "PCH.h"
 
 namespace GLOBAL_CONFIG {
     using PROJECT_TYPE = double;
@@ -524,465 +503,43 @@ private:
 
 ### Файл: include\core\PCH.h
 ```cpp
-//
-// Created by 4NR_Operator_3 on 16.09.2025.
-//
-
 #pragma once
-//библа
-#include "Eigen/Dense"
-#include <Eigen/Geometry>
 
-#include <vector>
-#include <memory>
+// Стандартная библиотека C++
+#include <algorithm>
+#include <array>
+#include <atomic>
 #include <cmath>
-#include <functional>
-#include <map>
-#include <string>
-#include <fstream>
+#include <cstdint>
+#include <ctime>
 #include <filesystem>
+#include <fstream>
+#include <functional>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <set>
 #include <sstream>
-#include <cstdint>
-#include <utility>
-#include "CONSTANTS.h"
-
+#include <stdexcept>
+#include <string>
 #include <unordered_map>
-#include <atomic>
-#include <mutex>
-#include <stdexcept>
-#include <iostream>
-#include <stdexcept>
+#include <utility>
+#include <vector>
+
+// Сторонние библиотеки
+#include <Eigen/Dense>
+#include <Eigen/Geometry>
+
+// Внутренние константы
+#include "CONSTANTS.h"
 
 ```
 
 
 ## Исходный код
-
-
-### Файл: src\DynamicsSystem\ExtensionModels\Aerodinamics\AeroInput\RocketAeroInput.h
-```cpp
-//
-// Created by 4NR_Operator_3 on 13.10.2025.
-//
-
-#pragma once
-
-template <typename metricType>
-struct RocketAeroInput {
-
-    metricType L = 0.0;
-    metricType D_mid = 0.0;
-    metricType L_har = 0.0;
-    metricType Xdp = 0.0;
-    metricType Xdst = 0.0;
-
-    metricType L_sum_kr = 0.0;
-    metricType b_0_kr = 0.0;
-    metricType b_1_kr = 0.0;
-    metricType hi_st = 0.0;
-    metricType d_kr = 0.0;
-    metricType S_kr = 0.0;
-    metricType l2_kr = 0.0;
-    metricType X_p_kr_st = 0.0;
-
-    int rudder_count = 0;
-    metricType L_sum_p = 0.0;
-    metricType b_0_p = 0.0;
-    metricType b_1_p = 0.0;
-    metricType hi_p = 0.0;
-    metricType d_p = 0.0;
-    metricType S_p = 0.0;
-    metricType l_2_p = 0.0;
-    metricType X_p_kr_p = 0.0;
-    metricType X_ov_p = 0.0;
-    metricType b_sah_p = 0.0;
-};
-```
-
-
-### Файл: src\DynamicsSystem\ExtensionModels\Aerodinamics\FullAeroModel\FullAeroModel.h
-```cpp
-#pragma once
-#include "../AeroInput/RocketAeroInput.h"
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-
-
-
-template<typename metricType>
-class FullAeroModel {
-public:
-    // ИЗМЕНЕННЫЙ КОНСТРУКТОР: принимаем ссылки вместо указателей
-    explicit FullAeroModel(
-        const RocketAeroInput<metricType>& aero_input,
-        const std::shared_ptr<ComponentInterpolationManager<metricType>>& interp_mgr)
-        : aero_input_(aero_input), interp_mgr_(interp_mgr) {
-
-        if (!interp_mgr_) {
-            throw std::invalid_argument("Interpolation manager cannot be null");
-        }
-
-        // Проверка корректности данных аэродинамики
-        if (aero_input_.rudder_count <= 0 || aero_input_.D_mid <= 0) {
-            throw std::invalid_argument("Invalid aerodynamic input parameters"); // ну это бред так-то
-        }
-    }
-
-    // === УГЛЫ АТАКИ И ОРИЕНТАЦИИ ===
-    metricType computeAlpha(const Eigen::Vector3<metricType>& velocity) const {
-        metricType V_xy = std::sqrt(velocity(0)*velocity(0) + velocity(1)*velocity(1));
-        if (V_xy < 1e-6) return 0;
-        return -std::asin(velocity(1) / V_xy);
-    }
-
-    metricType computeBeta(const Eigen::Vector3<metricType>& velocity) const {
-        metricType V_mag = velocity.norm();
-        if (V_mag < 1e-6) return 0;
-        return std::asin(velocity(2) / V_mag);
-    }
-
-    metricType computeAlphaP(const Eigen::Vector3<metricType>& velocity) const {
-        metricType V_mag = velocity.norm();
-        if (V_mag < 1e-6) return 0;
-        metricType V_lateral = std::sqrt(velocity(1)*velocity(1) + velocity(2)*velocity(2));
-        return std::asin(V_lateral / V_mag);
-    }
-
-    metricType computePhiP(const Eigen::Vector3<metricType>& velocity) const {
-        metricType V_lateral = std::sqrt(velocity(1)*velocity(1) + velocity(2)*velocity(2));
-        if (V_lateral < 1e-6) return 0;
-        return -std::atan2(velocity(2), velocity(1));
-    }
-
-    // === ВЫЧИСЛЕНИЕ СИЛ ===
-    Eigen::Vector3<metricType> computeAerodynamicForces(
-        const Eigen::Vector3<metricType>& velocity,
-        metricType rho) const {
-
-        metricType V_mag = velocity.norm();
-        if (V_mag < 1e-6) return Eigen::Vector3<metricType>::Zero();
-
-        metricType alpha = computeAlpha(velocity);
-        metricType mach = computeMach(V_mag);
-
-        metricType q_dynamic = 0.5 * rho * V_mag * V_mag;
-        metricType reference_area = M_PI * aero_input_.D_mid * aero_input_.D_mid / 4.0;
-
-        // Получаем коэффициенты (в текущем ComponentInterpolationManager
-        // коэффициенты зависят только от (alpha, mach))
-        metricType C_x = interp_mgr_->getCxAero(alpha, mach);
-        metricType C_y = interp_mgr_->getCyAero(alpha, mach);
-        metricType C_z = interp_mgr_->getCzAero(alpha, mach);
-
-        return q_dynamic * reference_area * Eigen::Vector3<metricType>(C_x, C_y, C_z);
-    }
-
-    // === ВЫЧИСЛЕНИЕ МОМЕНТОВ ===
-    Eigen::Vector3<metricType> computeAerodynamicMoments(
-        const Eigen::Vector3<metricType>& velocity,
-        const Eigen::Vector3<metricType>& angular_velocity,
-        metricType rho,
-        metricType center_of_mass,
-        const std::vector<metricType>& rudder_deflections) const {
-
-        if (rudder_deflections.size() < static_cast<size_t>(aero_input_.rudder_count)) {
-            throw std::invalid_argument("Insufficient rudder deflections provided");
-        }
-
-        metricType V_mag = velocity.norm();
-        if (V_mag < 1e-6) return Eigen::Vector3<metricType>::Zero();
-
-        // Вычисляем углы атаки
-        metricType alpha = computeAlpha(velocity);
-        metricType beta = computeBeta(velocity);
-        metricType alpha_p = computeAlphaP(velocity);
-        metricType phi_p = computePhiP(velocity);
-        metricType mach = computeMach(V_mag);
-
-        // Динамическое давление
-        metricType q_dynamic = 0.5 * rho * V_mag * V_mag;
-        metricType reference_area = M_PI * aero_input_.D_mid * aero_input_.D_mid / 4.0;
-
-        // === МОМЕНТ КРЕНА (X) ===
-        metricType moment_x = computeMomentX(
-            alpha, beta, alpha_p, phi_p, mach,
-            angular_velocity(0), V_mag, rudder_deflections,
-            q_dynamic, reference_area);
-
-        // === МОМЕНТ ТАНГАЖА (Y) ===
-        metricType moment_y = computeMomentY(
-            alpha, beta, alpha_p, phi_p, mach,
-            angular_velocity(1), V_mag, center_of_mass, rudder_deflections,
-            q_dynamic, reference_area);
-
-        // === МОМЕНТ РЫСКАНИЯ (Z) ===
-        metricType moment_z = computeMomentZ(
-            alpha, beta, alpha_p, phi_p, mach,
-            angular_velocity(2), V_mag, center_of_mass, rudder_deflections,
-            q_dynamic, reference_area);
-
-        return Eigen::Vector3<metricType>(moment_x, moment_y, moment_z);
-    }
-
-    // === ОБНОВЛЕНИЕ УГЛОВ ОТКЛОНЕНИЯ РУЛЕЙ ===
-    void updateControlSurfaceDeflections(const std::vector<metricType>& deflections) {
-        if (deflections.size() != static_cast<size_t>(aero_input_.rudder_count)) {
-            throw std::invalid_argument("Deflection count mismatch");
-        }
-        current_deflections_ = deflections;
-    }
-
-private:
-    const RocketAeroInput<metricType>& aero_input_;
-    std::shared_ptr<ComponentInterpolationManager<metricType>> interp_mgr_;
-    std::vector<metricType> current_deflections_;
-
-    // === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
-    metricType computeMach(metricType velocity) const {
-        // a = 20.04 * sqrt(288.16) ≈ 340.3 m/s
-        metricType speed_of_sound = 20.04 * std::sqrt(288.16);
-        return velocity / speed_of_sound;
-    }
-
-    // === МОМЕНТ КРЕНА ===
-    metricType computeMomentX(
-        metricType /*alpha*/, metricType /*beta*/, metricType /*alpha_p*/, metricType /*phi_p*/,
-        metricType /*mach*/, metricType /*wx*/, metricType /*V_mag*/,
-        const std::vector<metricType>& /*rudder_deflections*/,
-        metricType /*q_dynamic*/, metricType /*reference_area*/) const {
-
-        // TODO: детализированная модель моментов по крену требует
-        // дополнительных аэродинамических производных, которых пока нет
-        // в ComponentInterpolationManager. Временная заглушка.
-        return static_cast<metricType>(0);
-    }
-
-    // === МОМЕНТ ТАНГАЖА ===
-    metricType computeMomentY(
-        metricType /*alpha*/, metricType /*beta*/, metricType /*alpha_p*/, metricType /*phi_p*/,
-        metricType /*mach*/, metricType /*wy*/, metricType /*V_mag*/, metricType /*Xm*/,
-        const std::vector<metricType>& /*rudder_deflections*/,
-        metricType /*q_dynamic*/, metricType /*reference_area*/) const {
-
-        // TODO: аналогично computeMomentX, полноценная модель требует
-        // набора аэродинамических производных, которые пока не реализованы.
-        return static_cast<metricType>(0);
-    }
-
-    // === МОМЕНТ РЫСКАНИЯ ===
-    metricType computeMomentZ(
-        metricType /*alpha*/, metricType /*beta*/, metricType /*alpha_p*/, metricType /*phi_p*/,
-        metricType /*mach*/, metricType /*wz*/, metricType /*V_mag*/, metricType /*Xm*/,
-        const std::vector<metricType>& /*rudder_deflections*/,
-        metricType /*q_dynamic*/, metricType /*reference_area*/) const {
-
-        // TODO: заглушка для рыскательного момента по тем же причинам,
-        // что и в computeMomentX/computeMomentY.
-        return static_cast<metricType>(0);
-    }
-
-    // === ВСПОМОГАТЕЛЬНЫЕ ВЫЧИСЛЕНИЯ ===
-    metricType computeAlphaSt(metricType alpha_p, metricType phi_p, int i) const {
-        metricType phi_st_i = getPhi0St(i) + phi_p;
-        metricType tan_a_st = std::tan(alpha_p) * std::cos(phi_st_i)
-                            + 0.199 * std::tan(alpha_p) * std::sin(alpha_p) * std::sin(2.0 * phi_st_i);
-        return std::atan(tan_a_st);
-    }
-
-    metricType computeAlphaR(metricType alpha_p, metricType phi_p, int i,
-                            const std::vector<metricType>& rudder_deflections) const {
-        metricType phi_r_i = getPhi0R(i) + phi_p;
-        metricType tan_a_r = 1.361 * std::tan(alpha_p) * std::cos(phi_r_i)
-                           + 0.25 * std::tan(alpha_p) * std::sin(alpha_p) * std::sin(2.0 * phi_r_i);
-
-        metricType lambda_sum = 0;
-        for (int j = 0; j < aero_input_.rudder_count; j++) {
-            lambda_sum += getLambdaBig(i, j) * rudder_deflections[j];
-        }
-        
-        return std::atan(tan_a_r) + lambda_sum;
-    }
-
-    metricType getLambdaBig(int i, int j) const {
-        if (i == j % 4) return 0.8892;
-        else if (j == (i + 1) % 4) return -0.1102;
-        else if (j == (i + 2) % 4) return 0.0497;
-        else return -0.1102;
-    }
-
-    metricType getPhi0St(int i) const {
-        const metricType phi_0_st[] = {0, M_PI/2, M_PI, 3*M_PI/2};
-        return phi_0_st[i % 4];
-    }
-
-    metricType getPhi0R(int i) const {
-        const metricType phi_0_r[] = {45*M_PI/180, 135*M_PI/180, 225*M_PI/180, 315*M_PI/180};
-        return phi_0_r[i % 4];
-    }
-};
-```
-
-
-### Файл: src\DynamicsSystem\ExtensionModels\Aerodinamics\FullAeroModel\FullAeroModelAdapter.h
-```cpp
-#pragma once
-
-#include "../AeroInput/RocketAeroInput.h"
-#include "../IAeroModel.h"
-#include "../../../../utils/Interpolation/ComponentInterpolationManager.h"
-#include "FullAeroModel.h"
-
-/**
- * \brief Адаптер полной аэродинамической модели к интерфейсу IAeroModel
- *
- * Не содержит собственной математики — только делегирует расчёты
- * в существующий класс FullAeroModel, чтобы не нарушать инварианты
- * и сохранить воспроизводимость результатов.
- */
-template<typename metricType>
-class FullAeroModelAdapter final : public IAeroModel<metricType> {
-public:
-    FullAeroModelAdapter(
-        const RocketAeroInput<metricType>& aero_input,
-        std::shared_ptr<ComponentInterpolationManager<metricType>> interp_mgr)
-        : full_model_(aero_input, interp_mgr),
-          center_of_mass_(static_cast<metricType>(0))
-    {
-        if (!interp_mgr) {
-            throw std::invalid_argument("FullAeroModelAdapter: interpolation manager cannot be null");
-        }
-    }
-
-    ~FullAeroModelAdapter() override = default;
-
-    Eigen::Vector3<metricType> computeAerodynamicForces(
-        const Eigen::Vector3<metricType>& velocity_body,
-        metricType air_density,
-        metricType /*mach_number*/) const override
-    {
-        // Вся математика — внутри FullAeroModel
-        return full_model_.computeAerodynamicForces(velocity_body, air_density);
-    }
-
-    Eigen::Vector3<metricType> computeAerodynamicMoments(
-        const Eigen::Vector3<metricType>& velocity_body,
-        const Eigen::Vector3<metricType>& angular_velocity,
-        metricType air_density,
-        metricType /*mach_number*/,
-        const Eigen::Vector3<metricType>& /*euler_angles*/) const override
-    {
-        // Моменты тоже полностью считаются в FullAeroModel
-        return full_model_.computeAerodynamicMoments(
-            velocity_body,
-            angular_velocity,
-            air_density,
-            center_of_mass_,
-            current_deflections_);
-    }
-
-    /**
-     * \brief Обновление текущих управляющих воздействий
-     *
-     * Вызывается автопилотом или внешней логикой управления.
-     * Здесь нет физики — только передача параметров в полную модель.
-     */
-    void updateControl(
-        metricType center_of_mass,
-        const std::vector<metricType>& deflections)
-    {
-        center_of_mass_ = center_of_mass;
-        full_model_.updateControlSurfaceDeflections(deflections);
-        current_deflections_ = deflections;
-    }
-
-private:
-    FullAeroModel<metricType> full_model_;
-    metricType center_of_mass_;
-    std::vector<metricType> current_deflections_;
-};
-
-
-```
-
-
-### Файл: src\DynamicsSystem\ExtensionModels\Aerodinamics\IAeroModel.h
-```cpp
-//
-// Created by 4NR_Operator_3 on 27.01.2026.
-//
-
-#pragma once
-#include "PCH.h"
-
-/**
-* \brief Абстрактный интерфейс аэродинамической модели
-* \tparam metricType Тип данных для метрических величин
-*
-* \details Позволяет подключать разные реализации аэродинамики
-* (упрощённую, полную, табличную) без изменения ядра симуляции
-*/
-
-
-template<typename metricType>
-class IAeroModel {
-public:
-    virtual ~IAeroModel() = default;
-
-    // Силы в связной СК
-    virtual Eigen::Vector3<metricType> computeAerodynamicForces(
-        const Eigen::Vector3<metricType>& velocity_body,
-        metricType air_density,
-        metricType mach_number) const = 0;
-
-    // Моменты в связной СК
-    virtual Eigen::Vector3<metricType> computeAerodynamicMoments(
-        const Eigen::Vector3<metricType>& velocity_body,
-        const Eigen::Vector3<metricType>& angular_velocity,
-        metricType air_density,
-        metricType mach_number,
-        const Eigen::Vector3<metricType>& euler_angles) const = 0;
-};
-```
-
-
-### Файл: src\DynamicsSystem\ExtensionModels\Aerodinamics\SimpleAeroModel.h
-```cpp
-#pragma once
-#include "IAeroModel.h"
-
-template<typename metricType>
-class SimpleAeroModel final : public IAeroModel<metricType> {
-private:
-    metricType drag_coefficient_;
-    
-public:
-    explicit SimpleAeroModel(metricType drag_coefficient = 0.05f) 
-        : drag_coefficient_(drag_coefficient) {}
-    
-    Eigen::Vector3<metricType> computeAerodynamicForces(
-        const Eigen::Vector3<metricType>& velocity_body,
-        metricType air_density,
-        metricType mach_number) const override {
-        
-        metricType speed = velocity_body.norm();
-        if (speed < 1e-6) return Eigen::Vector3<metricType>::Zero();
-        return -drag_coefficient_ * speed * velocity_body;
-    }
-    
-    Eigen::Vector3<metricType> computeAerodynamicMoments(
-        const Eigen::Vector3<metricType>& velocity_body,
-        const Eigen::Vector3<metricType>& angular_velocity,
-        metricType air_density,
-        metricType mach_number,
-        const Eigen::Vector3<metricType>& euler_angles) const override {
-        return Eigen::Vector3<metricType>::Zero(); // Нулевые моменты в упрощённой модели
-    }
-};
-```
 
 
 ### Файл: src\DynamicsSystem\FullRocketODE\FullRocketODE.h
@@ -992,6 +549,7 @@ public:
 #include "../../../include/math/FlightMath.h"
 #include "../../utils/DynamicParametersProviderForFullRocketModel.h"
 #include "../../WorldModel/AbstractWorldModel.h"
+#include "../../../include/aero_simpi/aerodynamics.h"
 
 /**
  * CONVENTION (ENU - East-North-Up):
@@ -1030,14 +588,21 @@ class FullRocketODE final : public IDynamicsSystem<metricType> {
 private:
     std::weak_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider_;
     std::weak_ptr<AbstractWorldModel<metricType>> world_;
+    std::shared_ptr<aero::AerodynamicsModel> aero_model_;
     // Cache last computed forces and moments for snapshot augmentation
     mutable Eigen::Vector3<metricType> last_computed_forces_;
     mutable Eigen::Vector3<metricType> last_computed_moments_;
+    // Cache last aerodynamic output for snapshot augmentation
+    mutable aero::AeroOutput last_aero_output_;
+    mutable metricType last_alpha_;
+    mutable metricType last_beta_;
+    mutable metricType last_mach_;
 
 public:
     explicit FullRocketODE(
         std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
-        std::shared_ptr<AbstractWorldModel<metricType>> world
+        std::shared_ptr<AbstractWorldModel<metricType>> world,
+        std::shared_ptr<aero::AerodynamicsModel> aero_model
     );
 
     std::string get_description() const override;
@@ -1056,6 +621,7 @@ private:
 
     metricType computeSpaceAngleOfAttack(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeAerodynamicRollAngle(const Eigen::Vector3<metricType>& V_body) const;
+    metricType computeSideslipAngle(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeMachNumber(metricType V_magnitude, const Eigen::Vector3<metricType>& position) const;
     metricType computeAirDensity(const Eigen::Vector3<metricType>& position) const;
     
@@ -1211,7 +777,7 @@ protected:
 #include "../../utils/KinematicStateDerivative/KinematicStateDerivative.h"
 
 /**
- * \brief Четвёртый порядок метода Рунге–Кутты для интегрирования систем ОДУ.
+ * \brief  Метод Рунге–Кутты 4 для интегрирования систем ОДУ.
  *
  * \tparam metricType  Тип данных для метрических величин.
  * \tparam CallbackType Тип колбэка продолжения интегрирования (останавливает расчёт по условию).
@@ -1244,8 +810,6 @@ private:
 };
 
 
-// === РЕАЛИЗАЦИЯ ШАБЛОНА (должна быть в заголовочном файле) ===
-
 template <typename metricType, typename CallbackType>
 void RungeKutta4Solver<metricType, CallbackType>::solve(
     std::shared_ptr<IObjectManager<metricType>> object_manager,
@@ -1255,16 +819,16 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
     SimulationMomento<metricType>& momento
 ) {
     if (step_size <= 0) {
-        throw std::invalid_argument("Step size must be positive: " + std::to_string(step_size));
+        throw std::invalid_argument("Шаг по времени должен быть положительным: " + std::to_string(step_size));
     }
     if (t_start < 0) {
-        throw std::invalid_argument("Start time cannot be negative: " + std::to_string(t_start));
+        throw std::invalid_argument("Время начала расчета не может быть негативным: " + std::to_string(t_start));
     }
     if (!object_manager || object_manager->getObjectCount() == 0) {
-        throw std::invalid_argument("No objects to process");
+        throw std::invalid_argument("Нет объектов для расчетов");
     }
     if (!continue_callback) {
-        throw std::invalid_argument("Continue callback not set");
+        throw std::invalid_argument("Continue callback не установлен");
     }
 
     metricType current_time = t_start;
@@ -1279,7 +843,7 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
             auto& current_state_storage = momento.getStateStorageByID(id);
             const auto& states = current_state_storage.getStates();
             if (states.empty()) {
-                throw std::runtime_error("State storage is empty for object ID: " + std::to_string(id));
+                throw std::runtime_error("В хранителе объектов состояние пустое: " + std::to_string(id));
             }
             const auto& current_state = states.back();
 
@@ -1295,6 +859,17 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                         .setInertia(new_state->getInertia())
                         .setTotalForce(new_state->getTotalForce())
                         .setTotalMoment(new_state->getTotalMoment())
+                        .setAeroCx(static_cast<metricType>(new_state->getAeroCx()))
+                        .setAeroCy(static_cast<metricType>(new_state->getAeroCy()))
+                        .setAeroCz(static_cast<metricType>(new_state->getAeroCz()))
+                        .setAeroMx(static_cast<metricType>(new_state->getAeroMx()))
+                        .setAeroMy(static_cast<metricType>(new_state->getAeroMy()))
+                        .setAeroMz(static_cast<metricType>(new_state->getAeroMz()))
+                        .setAeroAlpha(new_state->getAeroAlpha())
+                        .setAeroBeta(new_state->getAeroBeta())
+                        .setAeroMach(new_state->getAeroMach())
+                        .setAeroXcp(static_cast<metricType>(new_state->getAeroXcp()))
+                        .setAeroStaticMargin(static_cast<metricType>(new_state->getAeroStaticMargin()))
                         .buildUnique();
                     
                     // Обновляем состояние объекта для колбэков
@@ -1302,8 +877,8 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                     // Сохраняем копию в momento
                     momento.addSnapshotByID(id, std::move(new_state_copy));
                 } catch (const std::exception& e) {
-                    std::cerr << "Error computing derivatives for object ID " << id
-                              << " at time " << current_time << ": " << e.what() << std::endl;
+                    std::cerr << "Ошибка с расчетом производной у объекта с id:  " << id
+                              << " во временном промежутке: " << current_time << ": " << e.what() << std::endl;
                     throw;
                 }
             } else {
@@ -1318,7 +893,7 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                 break;
             }
         } catch (const std::exception& e) {
-            std::cerr << "Error in continue callback: " << e.what() << std::endl;
+            std::cerr << "Проблема в continue callback: " << e.what() << std::endl;
             break;
         }
     }
@@ -1566,61 +1141,67 @@ protected:
 // Created by 4NR_Operator_3 on 13.10.2025.
 //
 #pragma once
-#include "../../GuidedMissle.h"
-#include "../../../../../../DynamicsSystem/ExtensionModels//Aerodinamics/AeroInput/RocketAeroInput.h"
+#include "../../../../../AbstractObject.h"
 #include "../../../../../../utils/ObjInitParams.h"
-#include "../../../../../../DynamicsSystem/ExtensionModels/Aerodinamics/IAeroModel.h"
+#include "../../../../../../utils/IParameterProvider.h"
+
 /**
-* \brief Класс реализации ЗУР_1_версия
+* \brief Класс реализации ЗУР_1_версия (MANPAD - Man-Portable Air-Defense System)
 *
 * \tparam metricType Тип данных для метрических величин
 *
 * \details Полная система с:
 * - Интерполяцией массы, инерции, тяги
-* - Расчётом аэродинамических сил и моментов
+* - Расчётом аэродинамических сил и моментов (через aero_simpi в FullRocketODE)
 * - БИНС и автопилотом
+* 
+* Аэродинамика теперь обрабатывается в FullRocketODE через библиотеку aero_simpi,
+* поэтому здесь не нужны RocketAeroInput и IAeroModel
 */
-//TODO
-// === Реализовать выше по иерархии передачу БИНС, головки самонаведений
-// чтобы тут работало измерение угловой скорости и ускорения с датчика,
-// а также угловое рассогласование с целью
-// ЧТО делать с управляющими поверхностями? Автопилот должен менять их поворот===
 
 template<typename metricType>
-class MANPAD_V1 final : public GuidedMissle<metricType, RocketAeroInput<metricType>> {
+class MANPAD_V1 final : public AbstractObject<metricType> {
 public:
     explicit MANPAD_V1(
         std::unique_ptr<IDynamicsSystem<metricType>> sys,
         std::unique_ptr<ObjInitParams<metricType>> initial_params,
-        std::unique_ptr<RocketAeroInput<metricType>> aero_input,
-        std::weak_ptr<IParameterProvider<metricType>> param_provider,  // Изменено: weak_ptr
-        std::shared_ptr<IAeroModel<metricType>> aero_model)
-        : GuidedMissle<metricType, RocketAeroInput<metricType>>(
-            std::move(sys),
-            std::move(initial_params),
-            std::move(aero_input),
-            param_provider),
-          aero_model_(std::move(aero_model))
+        std::weak_ptr<IParameterProvider<metricType>> param_provider)
+        : AbstractObject<metricType>(std::move(sys), std::move(initial_params)),
+          param_provider_(param_provider)
     {
-        if (!aero_model_) {
-            throw std::invalid_argument("MANPAD_V1: aero_model cannot be null");
+        // Проверяем, что провайдер параметров доступен
+        if (param_provider_.expired()) {
+            throw std::invalid_argument("ParameterProvider is not available");
         }
     }
 
-    Eigen::Vector3<metricType> getGyroscopeAngularVelocity(metricType t) const override {
+    // === ДАТЧИКИ БИНС ===
+    Eigen::Vector3<metricType> getGyroscopeAngularVelocity(metricType t) const {
+        // TODO: Добавить шум датчика
+        return this->getStateSnapshot().getAngularVelocity();
+    }
+
+    Eigen::Vector3<metricType> getAccelerometerAcceleration(metricType t) const {
+        // TODO: Добавить шум датчика и вычислить ускорение из производной скорости
         return Eigen::Vector3<metricType>::Zero();
     }
 
-    Eigen::Vector3<metricType> getAccelerometerAcceleration(metricType t) const override {
-        return Eigen::Vector3<metricType>::Zero();
-    }
-
-    void autopilot(metricType t) override {
+    // === АВТОПИЛОТ ===
+    void autopilot(metricType t) {
         // TODO: реализация автопилота
+        // Здесь будет логика управления рулями через aero_simpi
     }
 
-private:
-    std::shared_ptr<IAeroModel<metricType>> aero_model_;
+protected:
+    std::weak_ptr<IParameterProvider<metricType>> param_provider_;
+
+    [[nodiscard]] std::shared_ptr<IParameterProvider<metricType>> getParameterProvider() const {
+        auto provider = param_provider_.lock();
+        if (!provider) {
+            throw std::runtime_error("ParameterProvider is no longer available");
+        }
+        return provider;
+    }
 };
 ```
 
@@ -1680,6 +1261,7 @@ public:
     virtual ~SaveStrategy() = default;
     virtual void save(const std::vector<StateStorage<metricType>>& data) = 0;
 };
+
 template <typename metricType>
 class CsvSaveStrategy final : public SaveStrategy<metricType> {
 public:
@@ -1714,7 +1296,7 @@ private:
     }
 
     void saveSingleStorage(const StateStorage<metricType>& storage) {
-        int objectId = storage.getId();
+        const int objectId = storage.getId();
         const auto& states = storage.getStates();
         if (states.empty()) {
             return;
@@ -2244,11 +1826,10 @@ public:
 #pragma once
 #include "PCH.h"
 #include "Interpolation/ComponentInterpolationManager.h"
-#include "../DynamicsSystem/ExtensionModels/Aerodinamics/IAeroModel.h"
-#include "../DynamicsSystem/ExtensionModels/Aerodinamics/SimpleAeroModel.h"
 
 // Создание системы ОДУ для ракеты с провайдером, который будет хранить в себе
-// getMass(t) getInertia(t) getThrust(t) getAerodynamicForces(t) getAerodynamicMoments(t)
+// getMass(t) getInertia(t) getThrust(t)
+// Аэродинамика теперь обрабатывается отдельной библиотекой aero_simpi
 
 
 // эта тема знает про интерполятор(шаред птр на интерполятор закинуть
@@ -2265,14 +1846,11 @@ template <typename metricType>
 class DynamicParametersProviderForFullRocketModel {
 private:
     std::weak_ptr<ComponentInterpolationManager<metricType>> interpolation_manager_;
-    std::shared_ptr<IAeroModel<metricType>> aero_model_;
 
 public:
     explicit DynamicParametersProviderForFullRocketModel(
-        std::shared_ptr<ComponentInterpolationManager<metricType>> interpolation_manager,
-        std::shared_ptr<IAeroModel<metricType>> aero_model = nullptr)
-    : interpolation_manager_(interpolation_manager),
-      aero_model_(aero_model ? aero_model : std::make_shared<SimpleAeroModel<metricType>>(0.05f)) {}
+        std::shared_ptr<ComponentInterpolationManager<metricType>> interpolation_manager)
+    : interpolation_manager_(interpolation_manager) {}
 
     metricType getMass(metricType t) const {
         auto manager = interpolation_manager_.lock();
@@ -2291,12 +1869,11 @@ public:
         if (!manager) throw std::runtime_error("Interpolation manager expired");
         return manager->getThrust(t);
     }
-    
-    /// \brief Доступ к текущей аэродинамической модели
-    ///
-    /// Вся физика аэродинамики инкапсулирована в IAeroModel и её реализациях.
-    std::shared_ptr<IAeroModel<metricType>> getAeroModel() const {
-        return aero_model_;
+
+    [[nodiscard]] Eigen::Vector3<metricType> getCOM(metricType t) const {
+        auto manager = interpolation_manager_.lock();
+        if (!manager) throw std::runtime_error("Interpolation manager expired");
+        return manager->getCOM(t);
     }
 };
 ```
@@ -2333,6 +1910,11 @@ private:
     std::unique_ptr<ILinearInterpolator<metricType>> inertia_y_;
     std::unique_ptr<ILinearInterpolator<metricType>> inertia_z_;
 
+    // === ЦЕНТР МАСС ===
+    std::unique_ptr<ILinearInterpolator<metricType>> COM_x_;
+    std::unique_ptr<ILinearInterpolator<metricType>> COM_y_;
+    std::unique_ptr<ILinearInterpolator<metricType>> COM_z_;
+
     // === ТЯГА ОТ ДВИГАТЕЛЕЙ ===
     std::unique_ptr<ILinearInterpolator<metricType>> thrust_x_;
     std::unique_ptr<ILinearInterpolator<metricType>> thrust_y_;
@@ -2358,6 +1940,16 @@ public:
     void setMass(std::unique_ptr<ILinearInterpolator<metricType>> interp) {
         mass_ = std::move(interp);
     }
+
+    void setCOM(
+        std::unique_ptr<ILinearInterpolator<metricType>> x_COM,
+        std::unique_ptr<ILinearInterpolator<metricType>> y_COM,
+        std::unique_ptr<ILinearInterpolator<metricType>> z_COM) {
+        COM_x_ = std::move(x_COM);
+        COM_y_ = std::move(y_COM);
+        COM_z_ = std::move(z_COM);
+    }
+
 
     void setInertia(
         std::unique_ptr<ILinearInterpolator<metricType>> ix,
@@ -2405,6 +1997,17 @@ public:
         if (!mass_) throw std::runtime_error("Интерполятор массы не установлен");
         return mass_->interpolate(t);
     }
+
+    [[nodiscard]] Eigen::Vector3<metricType> getCOM(metricType t) const override {
+        if (!COM_x_) throw std::runtime_error("Интерполятор COM не установлен");
+        return Eigen::Vector3<metricType>(
+            COM_x_->interpolate(t),
+            COM_y_->interpolate(t),
+            COM_z_->interpolate(t)
+        );
+    }
+
+
 
     [[nodiscard]] Eigen::Vector3<metricType> getInertia(metricType t) const override {
         if (!inertia_x_ || !inertia_y_ || !inertia_z_)
@@ -2694,6 +2297,8 @@ public:
 
     // Получение вектора тяги в момент времени t
     [[nodiscard]] virtual Eigen::Vector3<metricType> getThrust(metricType t) const = 0;
+
+    [[nodiscard]] virtual Eigen::Vector3<metricType> getCOM(metricType t) const = 0;
 };
 
 ```
@@ -3032,6 +2637,19 @@ public:
     [[nodiscard]] const Eigen::Vector3<metricType>& getInertia() const;
     [[nodiscard]] const Eigen::Vector3<metricType>& getTotalForce() const;
     [[nodiscard]] const Eigen::Vector3<metricType>& getTotalMoment() const;
+    
+    // === ГЕТТЕРЫ АЭРОДИНАМИЧЕСКИХ КОЭФФИЦИЕНТОВ ===
+    [[nodiscard]] metricType getAeroCx() const;
+    [[nodiscard]] metricType getAeroCy() const;
+    [[nodiscard]] metricType getAeroCz() const;
+    [[nodiscard]] metricType getAeroMx() const;
+    [[nodiscard]] metricType getAeroMy() const;
+    [[nodiscard]] metricType getAeroMz() const;
+    [[nodiscard]] metricType getAeroAlpha() const;
+    [[nodiscard]] metricType getAeroBeta() const;
+    [[nodiscard]] metricType getAeroMach() const;
+    [[nodiscard]] metricType getAeroXcp() const;
+    [[nodiscard]] metricType getAeroStaticMargin() const;
 
     // === ДОСТУП К КИНЕМАТИКЕ ===
     [[nodiscard]] const KinematicState<metricType>& getKinematics() const;
@@ -3045,6 +2663,19 @@ public:
         Eigen::Vector3<metricType> inertia_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
         Eigen::Vector3<metricType> totalForce_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
         Eigen::Vector3<metricType> totalMoment_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
+        
+        // Аэродинамические коэффициенты
+        metricType aero_Cx_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_Cy_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_Cz_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_mx_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_my_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_mz_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_alpha_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_beta_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_mach_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_x_cp_ = std::numeric_limits<metricType>::quiet_NaN();
+        metricType aero_static_margin_ = std::numeric_limits<metricType>::quiet_NaN();
 
     public:
         explicit Builder(const KinematicState<metricType>& kinematics) : kinematics_(kinematics) {}
@@ -3056,6 +2687,20 @@ public:
         Builder& setInertia(const Eigen::Vector3<metricType>& i);
         Builder& setTotalForce(const Eigen::Vector3<metricType>& f);
         Builder& setTotalMoment(const Eigen::Vector3<metricType>& m);
+        
+        // Методы для установки аэродинамических коэффициентов
+        Builder& setAeroCx(metricType cx);
+        Builder& setAeroCy(metricType cy);
+        Builder& setAeroCz(metricType cz);
+        Builder& setAeroMx(metricType mx);
+        Builder& setAeroMy(metricType my);
+        Builder& setAeroMz(metricType mz);
+        Builder& setAeroAlpha(metricType alpha);
+        Builder& setAeroBeta(metricType beta);
+        Builder& setAeroMach(metricType mach);
+        Builder& setAeroXcp(metricType x_cp);
+        Builder& setAeroStaticMargin(metricType static_margin);
+        
         [[nodiscard]] std::unique_ptr<ObjSnapshot<metricType>> buildUnique() const;
     };
     static Builder createBuilder(const KinematicState<metricType>& kinematics);
@@ -3070,6 +2715,19 @@ private:
     Eigen::Vector3<metricType> inertia_;
     Eigen::Vector3<metricType> totalForce_;
     Eigen::Vector3<metricType> totalMoment_;
+    
+    // Аэродинамические коэффициенты
+    metricType aero_Cx_;
+    metricType aero_Cy_;
+    metricType aero_Cz_;
+    metricType aero_mx_;
+    metricType aero_my_;
+    metricType aero_mz_;
+    metricType aero_alpha_;
+    metricType aero_beta_;
+    metricType aero_mach_;
+    metricType aero_x_cp_;
+    metricType aero_static_margin_;
 };
 ```
 
@@ -3112,6 +2770,9 @@ struct SimulationConfig {
     std::string Ixx_path;
     std::string Iyy_path;
     std::string Izz_path;
+    std::string COM_x_path;
+    std::string COM_y_path;
+    std::string COM_z_path;
 
     SimulationConfigRocketInit rocket_init;
 
@@ -3505,19 +3166,6 @@ public:
 ```
 
 
-### Файл: src\DynamicsSystem\ExtensionModels\Aerodinamics\FullAeroModel\FullAeroModel.cpp
-```cpp
-/*
-//
-// Created by 4NR_Operator_3 on 13.10.2025.
-//
-
-#include "FullAeroModel.h"
-*/
-
-```
-
-
 ### Файл: src\DynamicsSystem\FullRocketODE\FullRocketODE.cpp
 ```cpp
 #include "PCH.h"
@@ -3526,15 +3174,20 @@ public:
 template <typename metricType>
 FullRocketODE<metricType>::FullRocketODE(
     const std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
-    const std::shared_ptr<AbstractWorldModel<metricType>> world
+    const std::shared_ptr<AbstractWorldModel<metricType>> world,
+    std::shared_ptr<aero::AerodynamicsModel> aero_model
 )
     : params_provider_(params_provider),
       world_(world),
+      aero_model_(std::move(aero_model)),
       last_computed_forces_(Eigen::Vector3<metricType>::Zero()),
       last_computed_moments_(Eigen::Vector3<metricType>::Zero())
 {
     if (params_provider_.expired()) {
         throw std::invalid_argument("Parameters provider cannot be null");
+    }
+    if (!aero_model_) {
+        throw std::invalid_argument("Aerodynamics model cannot be null");
     }
 }
 
@@ -3552,7 +3205,8 @@ std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>:
     if (!params_provider) {
         throw std::runtime_error("DynamicParametersProvider уже был уничтожен");
     }
-        metricType mass = params_provider->getMass(t);
+
+    metricType mass = params_provider->getMass(t);
     auto inertia = params_provider->getInertia(t);
 
     const auto& V_ENU = state.getVelocity();
@@ -3561,36 +3215,176 @@ std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>:
     // euler(0) = psi (yaw), euler(1) = theta (pitch) , euler(2) = gamma (roll)
     auto euler_angles = core::math::EulerAngles::ZYX(euler(0), euler(1), euler(2));
     const auto dcm = core::math::eulerToDCM(euler_angles, core::math::CoordinateFrame::ENU);
-    auto V_body = core::math::rotateVector(V_ENU, dcm, core::math::CoordinateFrame::ENU, false); // body_to_enu = false, так как матрицу нужно траснспонировать
+    auto V_body = core::math::rotateVector(V_ENU, dcm, core::math::CoordinateFrame::ENU, false);
+
+
+
 
     const auto& angularVelocity = state.getAngularVelocity();
-    // тут стопрацентная ошибка у нас, так как поменяли системы координат
+    
+    // Prepare aerodynamic state
+    metricType V_magnitude = V_body.norm();
     metricType alpha_p = computeSpaceAngleOfAttack(V_body);
     metricType phi_p = computeAerodynamicRollAngle(V_body);
-    metricType mach = computeMachNumber(V_body.norm(), Eigen::Vector3<metricType>::Zero()); // TODO: pass real position
+    metricType mach = computeMachNumber(V_magnitude, state.getPosition());
     metricType rho = computeAirDensity(state.getPosition());
+    metricType beta_p = computeSideslipAngle(V_body);
 
-    auto aero_model = params_provider->getAeroModel();
-    /*
-    auto aero_forces_body = aero_model->computeAerodynamicForces(V_body, rho, mach);
-    auto aero_moments_body = aero_model->computeAerodynamicMoments(V_body, omega, rho, mach, euler);
-    */
 
-    auto aero_forces_body = Eigen::Vector3<metricType>::Zero();
-    auto aero_moments_body = Eigen::Vector3<metricType>::Zero();
+    // Convert to degrees for aero library
+    metricType alpha_deg = alpha_p * 180.0 / M_PI;
+    metricType beta_deg = beta_p * 180.0 / M_PI;
+
+    // Сохраняем для snapshot
+    last_alpha_ = alpha_deg;
+    last_beta_ = beta_deg;
+    last_mach_ = mach;
+    
+    aero::AeroState aero_state;
+    aero_state.V = static_cast<double>(V_magnitude);
+    aero_state.alpha = static_cast<double>(alpha_deg);
+    aero_state.beta = static_cast<double>(beta_deg);
+    aero_state.p = static_cast<double>(angularVelocity(0));
+    aero_state.q = static_cast<double>(angularVelocity(1));
+    aero_state.r = static_cast<double>(angularVelocity(2));
+    aero_state.rho = static_cast<double>(rho);
+    aero_state.M = static_cast<double>(mach);
+    aero_state.dt = static_cast<double>(0.1);
+    auto COM = params_provider->getCOM(t);
+    aero_state.x_com = static_cast<double>(COM[0]);
+    aero_state.y_com = static_cast<double>(COM[1]);
+    aero_state.z_com = static_cast<double>(COM[2]);
+
+
+
+
+
+
+    aero::AeroOutput aero_output;
+    try {
+        aero_output = aero_model_->calculate(aero_state);
+        last_aero_output_ = aero_output;  // Сохраняем для snapshot
+    } catch (const aero::AeroException& e) {
+        // Handle aerodynamic calculation errors gracefully
+        std::cerr << "Aerodynamic calculation error: " << e.what() << std::endl;
+        aero_output = aero::AeroOutput{}; // Use zero coefficients
+        last_aero_output_ = aero_output;
+    }
+
+
+
+
+
+
+
+    // Convert aerodynamic coefficients to forces and moments in body frame
+    const auto& config = aero_model_->getConfig();
+    auto [aero_forces_body_vec, aero_moments_body_vec] = aero_output.getForcesAndMoments(
+        config.global.S_ref,
+        config.global.c_ref,
+        config.global.b_ref,
+        static_cast<double>(V_magnitude),
+        static_cast<double>(rho)
+    );
+
+    // Convert from Eigen::Vector3d to Eigen::Vector3<metricType>
+    Eigen::Vector3<metricType> aero_forces_body(
+        static_cast<metricType>(aero_forces_body_vec(0)),
+        static_cast<metricType>(aero_forces_body_vec(1)),
+        static_cast<metricType>(aero_forces_body_vec(2))
+    );
+
+    Eigen::Vector3<metricType> aero_moments_body(
+        static_cast<metricType>(aero_moments_body_vec(0)),
+        static_cast<metricType>(aero_moments_body_vec(1)),
+        static_cast<metricType>(aero_moments_body_vec(2))
+    );
 
 
 
 
     auto thrust_body = params_provider->getThrust(t);
-    //auto thrust_body = Eigen::Vector3<metricType>::Zero();
-    // Thrust is correct at the beginning, just check forces for coordinate system
+    
+    // Compute total forces and moments
     auto F_sum_ENU = computeTotalForcesENU(aero_forces_body, thrust_body, mass, dcm);
     last_computed_forces_ = F_sum_ENU;
+    last_computed_moments_ = aero_moments_body;
 
     auto dV_ENU = computeLinearAccelerationENU(F_sum_ENU, mass);
     auto dEuler_dt = computeEulerAnglesDerivatives(euler, angularVelocity);
+
+
+
+                           // === ВСТАВИТЬ ПОСЛЕ aero_model_->calculate(aero_state) ===
+                        const metricType q_dyn = static_cast<metricType>(0.5 * rho * V_magnitude * V_magnitude);
+
+                        std::cerr << "=== AERO DEBUG t=" << t << " ===" << std::endl;
+                        std::cerr << "V_body: [" << V_body.transpose() << "]" << std::endl;
+                        std::cerr << "alpha_deg=" << alpha_deg << ", beta_deg=" << beta_deg << std::endl;
+                        std::cerr << "Mach=" << mach << ", rho=" << rho << ", q_dyn=" << q_dyn << std::endl;
+                        std::cerr << "Cz=" << aero_output.Cz << ", my=" << aero_output.my << std::endl;
+                        std::cerr << "x_cp=" << aero_output.x_cp << ", x_com=" << COM[0] << std::endl;
+                        std::cerr << "arm_x=" << (aero_output.x_cp - COM[0]) << std::endl;
+                        std::cerr << "static_margin=" << aero_output.static_margin << std::endl;
+
+                        // КРИТИЧЕСКИ ВАЖНО: проверка знака dmy_dalpha
+                        std::cerr << "\n--- STATIC DERIVATES ---" << std::endl;
+                        std::cerr << "dmy_dalpha=" << aero_output.dmy_dalpha
+                                  << " (sign vs alpha: " << (aero_output.dmy_dalpha * alpha_deg < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
+                        std::cerr << "dCz_dalpha=" << aero_output.dCz_dalpha << std::endl;
+
+                        // Демпфирование
+                        std::cerr << "\n--- DYNAMIC DERIVATES ---" << std::endl;
+                        std::cerr << "dmy_dq=" << aero_output.dmy_dq
+                                  << " (sign: " << (aero_output.dmy_dq < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
+                        std::cerr << "dmx_dp=" << aero_output.dmx_dp
+                                  << " (sign: " << (aero_output.dmx_dp < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
+                        std::cerr << "dmz_dr=" << aero_output.dmz_dr
+                                  << " (sign: " << (aero_output.dmz_dr < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
+
+                        // Проверка вкладов демпфирования в моменты
+                        const metricType damp_my = static_cast<metricType>(aero_output.dmy_dq * angularVelocity(1))
+                            * q_dyn * config.global.S_ref * config.global.c_ref;
+                        const metricType damp_mx = static_cast<metricType>(aero_output.dmx_dp * angularVelocity(0))
+                            * q_dyn * config.global.S_ref * config.global.b_ref;
+                        const metricType damp_mz = static_cast<metricType>(aero_output.dmz_dr * angularVelocity(2))
+                            * q_dyn * config.global.S_ref * config.global.b_ref;
+
+                        std::cerr << "\n--- DEMPH INPUT ---" << std::endl;
+                        std::cerr << "damp_my=" << damp_my << " (against q: "
+                                  << (damp_my * angularVelocity(1) < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
+                        std::cerr << "damp_mx=" << damp_mx << " (against p: "
+                                  << (damp_mx * angularVelocity(0) < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
+                        std::cerr << "damp_mz=" << damp_mz << " (against r: "
+                                  << (damp_mz * angularVelocity(2) < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
+
+                        std::cerr << "\nangularVelocity: [" << angularVelocity.transpose() << "]" << std::endl;
+                        std::cerr << "==================" << std::endl;
+
+
+    // Pitch damping (тангаж)
+    aero_moments_body(1) += static_cast<metricType>(aero_output.dmy_dq * angularVelocity(1))
+                            * q_dyn * config.global.S_ref * config.global.c_ref;
+
+    // Yaw damping (рыскание)
+    aero_moments_body(2) += static_cast<metricType>(aero_output.dmz_dr * angularVelocity(2))
+                            * q_dyn * config.global.S_ref * config.global.b_ref;
+
+    // Roll damping (крен)
+    aero_moments_body(0) += static_cast<metricType>(aero_output.dmx_dp * angularVelocity(0))
+                            * q_dyn * config.global.S_ref * config.global.b_ref;
+
+
+
     auto dAngularVelocity_dt = computeAngularAccelerationBody(aero_moments_body, inertia, angularVelocity);
+
+    /*
+    std::cerr << "DEBUG: alpha=" << alpha_deg
+          << ", Cz=" << aero_output.Cz
+          << ", my=" << aero_output.my
+          << ", x_cp=" << (aero_output.x_cp)
+          << ", static_margin=" << aero_output.static_margin << std::endl;
+          */
 
     return std::make_unique<KinematicStateDerivative<metricType>>(
             V_ENU,  // dPosition/dt = Velocity
@@ -3616,6 +3410,17 @@ std::unique_ptr<ObjSnapshot<metricType>> FullRocketODE<metricType>::augmentSnaps
         .setInertia(params_provider->getInertia(t))
         .setTotalForce(last_computed_forces_)
         .setTotalMoment(last_computed_moments_)
+        .setAeroCx(static_cast<metricType>(last_aero_output_.Cx))
+        .setAeroCy(static_cast<metricType>(last_aero_output_.Cy))
+        .setAeroCz(static_cast<metricType>(last_aero_output_.Cz))
+        .setAeroMx(static_cast<metricType>(last_aero_output_.mx))
+        .setAeroMy(static_cast<metricType>(last_aero_output_.my))
+        .setAeroMz(static_cast<metricType>(last_aero_output_.mz))
+        .setAeroAlpha(last_alpha_)
+        .setAeroBeta(last_beta_)
+        .setAeroMach(last_mach_)
+        .setAeroXcp(static_cast<metricType>(last_aero_output_.x_cp))
+        .setAeroStaticMargin(static_cast<metricType>(last_aero_output_.static_margin))
             .buildUnique();
 }
 
@@ -3625,12 +3430,27 @@ std::unique_ptr<ObjSnapshot<metricType>> FullRocketODE<metricType>::augmentSnaps
 template <typename metricType>
 metricType FullRocketODE<metricType>::computeSpaceAngleOfAttack(const Eigen::Vector3<metricType>& V_body) const {
     metricType v_x = V_body(0);
-    metricType v_y = V_body(1);
     metricType v_z = V_body(2);
-    metricType numerator = std::sqrt(v_y*v_y + v_z*v_z);
-    metricType denominator = std::sqrt(v_x*v_x + v_y*v_y + v_z*v_z);
-    if (denominator < 1e-6) return 0.0;
-    return std::asin(numerator / denominator);
+
+    // Защита от деления на ноль
+    if (std::abs(v_x) < 1e-6) {
+        return (v_z > 0) ? (MathConstants::PI/2) : -(MathConstants::PI/2);
+    }
+    return std::atan2(-v_z, v_x);
+}
+
+template <typename metricType>
+metricType FullRocketODE<metricType>::computeSideslipAngle(
+    const Eigen::Vector3<metricType>& V_body) const {
+
+    metricType v_x = V_body(0);
+    metricType v_y = V_body(1);
+
+    if (std::abs(v_x) < 1e-6) {
+        return (v_y > 0) ? (MathConstants::PI/2) : -(MathConstants::PI/2);
+    }
+
+    return std::atan2(v_y, v_x);
 }
 
 template <typename metricType>
@@ -3657,7 +3477,16 @@ metricType FullRocketODE<metricType>::computeAirDensity(const Eigen::Vector3<met
     if (!world || !world->getAtmosphericModel()) {
         throw std::runtime_error("World or atmospheric model not available");
     }
-    return world->getAtmosphericModel()->getDensity(position);
+    
+    metricType rho = world->getAtmosphericModel()->getDensity(position);
+    
+    // Если плотность <= 0 (например, ракета ушла за пределы модели или врезалась в землю),
+    // используем плотность на уровне моря для избежания ошибок в аэродинамике
+    if (rho <= 0.0) {
+        rho = static_cast<metricType>(PhysicsConstants::rho0);
+    }
+    
+    return rho;
 }
 
 template <typename metricType>
@@ -4031,7 +3860,19 @@ ObjSnapshot<metricType>::ObjSnapshot()
       mass_(std::numeric_limits<metricType>::quiet_NaN()),
       inertia_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())),
       totalForce_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())),
-      totalMoment_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())){}
+      totalMoment_(Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN())),
+      aero_Cx_(std::numeric_limits<metricType>::quiet_NaN()),
+      aero_Cy_(std::numeric_limits<metricType>::quiet_NaN()),
+      aero_Cz_(std::numeric_limits<metricType>::quiet_NaN()),
+      aero_mx_(std::numeric_limits<metricType>::quiet_NaN()),
+      aero_my_(std::numeric_limits<metricType>::quiet_NaN()),
+      aero_mz_(std::numeric_limits<metricType>::quiet_NaN()),
+      aero_alpha_(std::numeric_limits<metricType>::quiet_NaN()),
+      aero_beta_(std::numeric_limits<metricType>::quiet_NaN()),
+      aero_mach_(std::numeric_limits<metricType>::quiet_NaN()),
+      aero_x_cp_(std::numeric_limits<metricType>::quiet_NaN()),
+      aero_static_margin_(std::numeric_limits<metricType>::quiet_NaN())
+{}
 
 // Delegate to kinematics for backward compatibility
 template<typename metricType>
@@ -4079,6 +3920,62 @@ const Eigen::Vector3<metricType>& ObjSnapshot<metricType>::getTotalMoment() cons
     return totalMoment_;
 }
 
+// === ГЕТТЕРЫ АЭРОДИНАМИЧЕСКИХ КОЭФФИЦИЕНТОВ ===
+template<typename metricType>
+metricType ObjSnapshot<metricType>::getAeroCx() const {
+    return aero_Cx_;
+}
+
+template<typename metricType>
+metricType ObjSnapshot<metricType>::getAeroCy() const {
+    return aero_Cy_;
+}
+
+template<typename metricType>
+metricType ObjSnapshot<metricType>::getAeroCz() const {
+    return aero_Cz_;
+}
+
+template<typename metricType>
+metricType ObjSnapshot<metricType>::getAeroMx() const {
+    return aero_mx_;
+}
+
+template<typename metricType>
+metricType ObjSnapshot<metricType>::getAeroMy() const {
+    return aero_my_;
+}
+
+template<typename metricType>
+metricType ObjSnapshot<metricType>::getAeroMz() const {
+    return aero_mz_;
+}
+
+template<typename metricType>
+metricType ObjSnapshot<metricType>::getAeroAlpha() const {
+    return aero_alpha_;
+}
+
+template<typename metricType>
+metricType ObjSnapshot<metricType>::getAeroBeta() const {
+    return aero_beta_;
+}
+
+template<typename metricType>
+metricType ObjSnapshot<metricType>::getAeroMach() const {
+    return aero_mach_;
+}
+
+template<typename metricType>
+metricType ObjSnapshot<metricType>::getAeroXcp() const {
+    return aero_x_cp_;
+}
+
+template<typename metricType>
+metricType ObjSnapshot<metricType>::getAeroStaticMargin() const {
+    return aero_static_margin_;
+}
+
 
 template<typename metricType>
 const KinematicState<metricType>& ObjSnapshot<metricType>::getKinematics() const {
@@ -4115,6 +4012,73 @@ typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::set
     return *this;
 }
 
+// === СЕТТЕРЫ АЭРОДИНАМИЧЕСКИХ КОЭФФИЦИЕНТОВ ===
+template<typename metricType>
+typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setAeroCx(metricType cx) {
+    aero_Cx_ = cx;
+    return *this;
+}
+
+template<typename metricType>
+typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setAeroCy(metricType cy) {
+    aero_Cy_ = cy;
+    return *this;
+}
+
+template<typename metricType>
+typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setAeroCz(metricType cz) {
+    aero_Cz_ = cz;
+    return *this;
+}
+
+template<typename metricType>
+typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setAeroMx(metricType mx) {
+    aero_mx_ = mx;
+    return *this;
+}
+
+template<typename metricType>
+typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setAeroMy(metricType my) {
+    aero_my_ = my;
+    return *this;
+}
+
+template<typename metricType>
+typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setAeroMz(metricType mz) {
+    aero_mz_ = mz;
+    return *this;
+}
+
+template<typename metricType>
+typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setAeroAlpha(metricType alpha) {
+    aero_alpha_ = alpha;
+    return *this;
+}
+
+template<typename metricType>
+typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setAeroBeta(metricType beta) {
+    aero_beta_ = beta;
+    return *this;
+}
+
+template<typename metricType>
+typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setAeroMach(metricType mach) {
+    aero_mach_ = mach;
+    return *this;
+}
+
+template<typename metricType>
+typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setAeroXcp(metricType x_cp) {
+    aero_x_cp_ = x_cp;
+    return *this;
+}
+
+template<typename metricType>
+typename ObjSnapshot<metricType>::Builder& ObjSnapshot<metricType>::Builder::setAeroStaticMargin(metricType static_margin) {
+    aero_static_margin_ = static_margin;
+    return *this;
+}
+
 
 
 template<typename metricType>
@@ -4126,6 +4090,20 @@ std::unique_ptr<ObjSnapshot<metricType>> ObjSnapshot<metricType>::Builder::build
     snapshot->inertia_ = inertia_;
     snapshot->totalForce_ = totalForce_;
     snapshot->totalMoment_ = totalMoment_;
+    
+    // Аэродинамические коэффициенты
+    snapshot->aero_Cx_ = aero_Cx_;
+    snapshot->aero_Cy_ = aero_Cy_;
+    snapshot->aero_Cz_ = aero_Cz_;
+    snapshot->aero_mx_ = aero_mx_;
+    snapshot->aero_my_ = aero_my_;
+    snapshot->aero_mz_ = aero_mz_;
+    snapshot->aero_alpha_ = aero_alpha_;
+    snapshot->aero_beta_ = aero_beta_;
+    snapshot->aero_mach_ = aero_mach_;
+    snapshot->aero_x_cp_ = aero_x_cp_;
+    snapshot->aero_static_margin_ = aero_static_margin_;
+    
     return snapshot;
 }
 
@@ -4160,6 +4138,19 @@ std::map<std::string, metricType> ObjSnapshot<metricType>::getParams() const {
     if (!std::isnan(totalMoment_.x())) params["totalMoment_x"] = totalMoment_.x();
     if (!std::isnan(totalMoment_.y())) params["totalMoment_y"] = totalMoment_.y();
     if (!std::isnan(totalMoment_.z())) params["totalMoment_z"] = totalMoment_.z();
+    
+    // Аэродинамические коэффициенты
+    if (!std::isnan(aero_Cx_)) params["aero_Cx"] = aero_Cx_;
+    if (!std::isnan(aero_Cy_)) params["aero_Cy"] = aero_Cy_;
+    if (!std::isnan(aero_Cz_)) params["aero_Cz"] = aero_Cz_;
+    if (!std::isnan(aero_mx_)) params["aero_mx"] = aero_mx_;
+    if (!std::isnan(aero_my_)) params["aero_my"] = aero_my_;
+    if (!std::isnan(aero_mz_)) params["aero_mz"] = aero_mz_;
+    if (!std::isnan(aero_alpha_)) params["aero_alpha"] = aero_alpha_;
+    if (!std::isnan(aero_beta_)) params["aero_beta"] = aero_beta_;
+    if (!std::isnan(aero_mach_)) params["aero_mach"] = aero_mach_;
+    if (!std::isnan(aero_x_cp_)) params["aero_x_cp"] = aero_x_cp_;
+    if (!std::isnan(aero_static_margin_)) params["aero_static_margin"] = aero_static_margin_;
 
     return params;
 }
@@ -4215,6 +4206,9 @@ SimulationConfig SimulationConfig::loadFromJsonFile(const std::string& path) {
     cfg.Ixx_path = extractString(json, "Ixx", "");
     cfg.Iyy_path = extractString(json, "Iyy", "");
     cfg.Izz_path = extractString(json, "Izz", "");
+    cfg.COM_x_path = extractString(json, "COM_x", "");
+    cfg.COM_y_path = extractString(json, "COM_y", "");
+    cfg.COM_z_path = extractString(json, "COM_z", "");
 
     // Глобальные параметры симуляции
     cfg.time_step = extractFloat(json, "time_step", cfg.time_step);
@@ -4607,2098 +4601,109 @@ std::pair<metricType, metricType> NoWindModel<metricType>::getWindDirection( Eig
 ## Тесты
 
 
-### Файл: tests\unit\OdeSolver\test_mocks.h
-```cpp
-#pragma once
-
-#include <memory>
-#include <map>
-#include <functional>
-#include "../../../src/DynamicsSystem/IDynamicsSystem.h"
-#include "../../../src/utils/ObjManager/IObjectManager.h"
-#include "../../../src/SimulationMomento/SimulationMomento.h"
-#include "../../../src/PhysicalObjects/AbstractObject.h"
-#include "../../../src/utils/ObjInitParams.h"
-
-/**
- * \brief Мок системы динамики для аналитических тестовых случаев
- * 
- * \details Позволяет задать произвольную функцию производных через лямбду.
- * Используется для тестирования решателя на известных аналитических решениях.
- */
-template<typename metricType>
-class MockDynamicsSystem : public IDynamicsSystem<metricType> {
-private:
-    std::function<KinematicState<metricType>(const KinematicState<metricType>&, metricType)> derivative_func_;
-    std::string description_;
-    
-public:
-    /**
-     * \brief Конструктор мок системы динамики
-     * \param func Функция, вычисляющая производные состояния
-     * \param desc Описание системы
-     */
-    explicit MockDynamicsSystem(
-        std::function<KinematicState<metricType>(const KinematicState<metricType>&, metricType)> func,
-        const std::string& desc = "Мок системы динамики")
-        : derivative_func_(std::move(func)), description_(desc) {}
-    
-    std::string get_description() const override {
-        return description_;
-    }
-    
-    std::unique_ptr<KinematicState<metricType>> get_rhs_derivatives(
-        const KinematicState<metricType>& state,
-        metricType t
-    ) override {
-        auto result = derivative_func_(state, t);
-        return std::make_unique<KinematicState<metricType>>(std::move(result));
-    }
-    
-    std::unique_ptr<ObjSnapshot<metricType>> augmentSnapshot(
-        const KinematicState<metricType>& kinematics,
-        metricType t
-    ) const override {
-        return ObjSnapshot<metricType>::createBuilder(kinematics)
-            .setTime(t)
-            .setMass(metricType(1.0))
-            .setInertia(Eigen::Vector3<metricType>(metricType(1.0), metricType(1.0), metricType(1.0)))
-            .setTotalForce(Eigen::Vector3<metricType>::Zero())
-            .setTotalMoment(Eigen::Vector3<metricType>::Zero())
-            .setTotalForceEarth(Eigen::Vector3<metricType>::Zero())
-            .setTotalMomentEarth(Eigen::Vector3<metricType>::Zero())
-            .buildUnique();
-    }
-};
-
-/**
- * \brief Мок физического объекта для тестирования
- * 
- * \details Наследуется от AbstractObject и правильно инициализирует базовый класс.
- * Позволяет управлять состоянием активности объекта для тестирования.
- */
-template<typename metricType>
-class MockObject : public AbstractObject<metricType> {
-private:
-    std::shared_ptr<IDynamicsSystem<metricType>> dynamics_shared_;  // Храним shared_ptr для копирования
-    
-public:
-    /**
-     * \brief Конструктор мок объекта
-     * \param dynamics Система динамики (будет скопирована в unique_ptr)
-     * \param init_pos Начальная позиция объекта
-     * \param active Начальное состояние активности
-     */
-    explicit MockObject(
-        std::shared_ptr<IDynamicsSystem<metricType>> dynamics,
-        const Eigen::Vector3<metricType>& init_pos = Eigen::Vector3<metricType>(metricType(1.0), metricType(0.0), metricType(0.0)),
-        bool active = true)
-        : AbstractObject<metricType>(
-            createDynamicsPtr(dynamics),
-            createInitParams(init_pos)
-        ),
-        dynamics_shared_(dynamics)
-    {
-        if (active) {
-            this->setActive();
-        } else {
-            this->setDestroyed();
-        }
-    }
-    
-    /**
-     * \brief Изменить состояние активности объекта
-     */
-    void setActiveState(bool active) {
-        if (active) {
-            this->setActive();
-        } else {
-            this->setDestroyed();
-        }
-    }
-
-private:
-    /**
-     * \brief Создает unique_ptr для системы динамики
-     * \details Создает новый экземпляр MockDynamicsSystem с той же функцией производных
-     */
-    static std::unique_ptr<IDynamicsSystem<metricType>> createDynamicsPtr(
-        std::shared_ptr<IDynamicsSystem<metricType>> dynamics)
-    {
-        // Получаем указатель на MockDynamicsSystem
-        auto* mock_dyn = dynamic_cast<MockDynamicsSystem<metricType>*>(dynamics.get());
-        if (!mock_dyn) {
-            throw std::runtime_error("Dynamics system must be MockDynamicsSystem");
-        }
-        
-        // Создаем копию MockDynamicsSystem
-        return std::make_unique<MockDynamicsSystem<metricType>>(*mock_dyn);
-    }
-    
-    /**
-     * \brief Создает начальные параметры объекта
-     */
-    static std::unique_ptr<ObjInitParams<metricType>> createInitParams(
-        const Eigen::Vector3<metricType>& init_pos)
-    {
-        auto params = std::make_unique<ObjInitParams<metricType>>();
-        params->position = init_pos;
-        params->velocity = Eigen::Vector3<metricType>::Zero();
-        params->eulerAngles = Eigen::Vector3<metricType>::Zero();
-        params->angularVelocity = Eigen::Vector3<metricType>::Zero();
-        return params;
-    }
-};
-
-/**
- * \brief Мок менеджера объектов для тестирования
- * 
- * \details Реализует интерфейс IObjectManager для управления тестовыми объектами.
- * Хранит объекты через weak_ptr для соответствия реальному интерфейсу.
- */
-template<typename metricType>
-class MockObjectManager : public IObjectManager<metricType> {
-private:
-    std::map<int, std::shared_ptr<AbstractObject<metricType>>> objects_storage_;  // Для владения
-    std::map<int, std::weak_ptr<AbstractObject<metricType>>> objects_;            // Для интерфейса
-    
-public:
-    /**
-     * \brief Добавить объект с автоматическим ID
-     */
-    int addTrackedObject(std::shared_ptr<AbstractObject<metricType>> object) override {
-        int id = static_cast<int>(objects_storage_.size()) + 1;
-        objects_storage_[id] = object;
-        objects_[id] = object;
-        return id;
-    }
-    
-    /**
-     * \brief Добавить объект с заданным ID (для тестов)
-     */
-    void addObject(int id, std::shared_ptr<AbstractObject<metricType>> obj) {
-        objects_storage_[id] = obj;
-        objects_[id] = obj;
-    }
-    
-    /**
-     * \brief Получить объект по ID
-     */
-    std::shared_ptr<AbstractObject<metricType>> getObjectByID(int id) const override {
-        auto it = objects_.find(id);
-        if (it != objects_.end()) {
-            return it->second.lock();
-        }
-        return nullptr;
-    }
-    
-    /**
-     * \brief Удалить объект по ID
-     */
-    bool removeObjectById(int id) override {
-        objects_storage_.erase(id);
-        return objects_.erase(id) > 0;
-    }
-    
-    /**
-     * \brief Получить количество объектов
-     */
-    size_t getObjectCount() const override {
-        return objects_.size();
-    }
-    
-    /**
-     * \brief Очистить все объекты
-     */
-    void clearAllObjects() override {
-        objects_storage_.clear();
-        objects_.clear();
-    }
-    
-    /**
-     * \brief Получить все объекты (для RungeKutta4Solver)
-     */
-    std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> getAllObjects() const override {
-        std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> result;
-        for (const auto& [id, obj] : objects_) {
-            result.emplace_back(id, obj);
-        }
-        return result;
-    }
-};
-
-/**
- * \brief Вспомогательная функция для создания мок системы динамики
- * 
- * \details Упрощает создание систем динамики для типичных тестовых случаев.
- */
-template<typename metricType>
-std::shared_ptr<MockDynamicsSystem<metricType>> createExponentialDecaySystem(metricType lambda = metricType(1.0)) {
-    return std::make_shared<MockDynamicsSystem<metricType>>(
-        [lambda](const KinematicState<metricType>& state, metricType t) -> KinematicState<metricType> {
-            // Производная: dx/dt = -lambda * x (экспоненциальное затухание)
-            return KinematicState<metricType>::createBuilder()
-                .setPosition(-lambda * state.getPosition())
-                .setVelocity(Eigen::Vector3<metricType>::Zero())
-                .setEulerAngles(Eigen::Vector3<metricType>::Zero())
-                .setAngularVelocity(Eigen::Vector3<metricType>::Zero())
-                .build();
-        },
-        "Система экспоненциального затухания"
-    );
-}
-
-/**
- * \brief Вспомогательная функция для создания системы экспоненциального роста
- */
-template<typename metricType>
-std::shared_ptr<MockDynamicsSystem<metricType>> createExponentialGrowthSystem(metricType lambda = metricType(0.5)) {
-    return std::make_shared<MockDynamicsSystem<metricType>>(
-        [lambda](const KinematicState<metricType>& state, metricType t) -> KinematicState<metricType> {
-            // Производная: dx/dt = lambda * x (экспоненциальный рост)
-            return KinematicState<metricType>::createBuilder()
-                .setPosition(lambda * state.getPosition())
-                .setVelocity(Eigen::Vector3<metricType>::Zero())
-                .setEulerAngles(Eigen::Vector3<metricType>::Zero())
-                .setAngularVelocity(Eigen::Vector3<metricType>::Zero())
-                .build();
-        },
-        "Система экспоненциального роста"
-    );
-}
-
-/**
- * \brief Вспомогательная функция для создания линейной системы
- */
-template<typename metricType>
-std::shared_ptr<MockDynamicsSystem<metricType>> createLinearSystem() {
-    return std::make_shared<MockDynamicsSystem<metricType>>(
-        [](const KinematicState<metricType>& state, metricType t) -> KinematicState<metricType> {
-            // Производная: dx/dt = t (интеграл: x = t²/2 + C)
-            return KinematicState<metricType>::createBuilder()
-                .setPosition(Eigen::Vector3<metricType>(t, metricType(0.0), metricType(0.0)))
-                .setVelocity(Eigen::Vector3<metricType>::Zero())
-                .setEulerAngles(Eigen::Vector3<metricType>::Zero())
-                .setAngularVelocity(Eigen::Vector3<metricType>::Zero())
-                .build();
-        },
-        "Линейная система динамики"
-    );
-}
-
-/**
- * \brief Вспомогательная функция для создания константной системы
- */
-template<typename metricType>
-std::shared_ptr<MockDynamicsSystem<metricType>> createConstantSystem() {
-    return std::make_shared<MockDynamicsSystem<metricType>>(
-        [](const KinematicState<metricType>& state, metricType t) -> KinematicState<metricType> {
-            // Производная: dx/dt = 1 (интеграл: x = t + C)
-            return KinematicState<metricType>::createBuilder()
-                .setPosition(Eigen::Vector3<metricType>(metricType(1.0), metricType(0.0), metricType(0.0)))
-                .setVelocity(Eigen::Vector3<metricType>::Zero())
-                .setEulerAngles(Eigen::Vector3<metricType>::Zero())
-                .setAngularVelocity(Eigen::Vector3<metricType>::Zero())
-                .build();
-        },
-        "Константная система динамики"
-    );
-}
-
-```
-
-
-### Файл: tests\build\CMakeFiles\4.2.3\CompilerIdCXX\CMakeCXXCompilerId.cpp
-```cpp
-/* This source file must have a .cpp extension so that all C++ compilers
-   recognize the extension without flags.  Borland does not know .cxx for
-   example.  */
-#ifndef __cplusplus
-# error "A C compiler has been selected for C++."
-#endif
-
-#if !defined(__has_include)
-/* If the compiler does not have __has_include, pretend the answer is
-   always no.  */
-#  define __has_include(x) 0
-#endif
-
-
-/* Version number components: V=Version, R=Revision, P=Patch
-   Version date components:   YYYY=Year, MM=Month,   DD=Day  */
-
-#if defined(__INTEL_COMPILER) || defined(__ICC)
-# define COMPILER_ID "Intel"
-# if defined(_MSC_VER)
-#  define SIMULATE_ID "MSVC"
-# endif
-# if defined(__GNUC__)
-#  define SIMULATE_ID "GNU"
-# endif
-  /* __INTEL_COMPILER = VRP prior to 2021, and then VVVV for 2021 and later,
-     except that a few beta releases use the old format with V=2021.  */
-# if __INTEL_COMPILER < 2021 || __INTEL_COMPILER == 202110 || __INTEL_COMPILER == 202111
-#  define COMPILER_VERSION_MAJOR DEC(__INTEL_COMPILER/100)
-#  define COMPILER_VERSION_MINOR DEC(__INTEL_COMPILER/10 % 10)
-#  if defined(__INTEL_COMPILER_UPDATE)
-#   define COMPILER_VERSION_PATCH DEC(__INTEL_COMPILER_UPDATE)
-#  else
-#   define COMPILER_VERSION_PATCH DEC(__INTEL_COMPILER   % 10)
-#  endif
-# else
-#  define COMPILER_VERSION_MAJOR DEC(__INTEL_COMPILER)
-#  define COMPILER_VERSION_MINOR DEC(__INTEL_COMPILER_UPDATE)
-   /* The third version component from --version is an update index,
-      but no macro is provided for it.  */
-#  define COMPILER_VERSION_PATCH DEC(0)
-# endif
-# if defined(__INTEL_COMPILER_BUILD_DATE)
-   /* __INTEL_COMPILER_BUILD_DATE = YYYYMMDD */
-#  define COMPILER_VERSION_TWEAK DEC(__INTEL_COMPILER_BUILD_DATE)
-# endif
-# if defined(_MSC_VER)
-   /* _MSC_VER = VVRR */
-#  define SIMULATE_VERSION_MAJOR DEC(_MSC_VER / 100)
-#  define SIMULATE_VERSION_MINOR DEC(_MSC_VER % 100)
-# endif
-# if defined(__GNUC__)
-#  define SIMULATE_VERSION_MAJOR DEC(__GNUC__)
-# elif defined(__GNUG__)
-#  define SIMULATE_VERSION_MAJOR DEC(__GNUG__)
-# endif
-# if defined(__GNUC_MINOR__)
-#  define SIMULATE_VERSION_MINOR DEC(__GNUC_MINOR__)
-# endif
-# if defined(__GNUC_PATCHLEVEL__)
-#  define SIMULATE_VERSION_PATCH DEC(__GNUC_PATCHLEVEL__)
-# endif
-
-#elif (defined(__clang__) && defined(__INTEL_CLANG_COMPILER)) || defined(__INTEL_LLVM_COMPILER)
-# define COMPILER_ID "IntelLLVM"
-#if defined(_MSC_VER)
-# define SIMULATE_ID "MSVC"
-#endif
-#if defined(__GNUC__)
-# define SIMULATE_ID "GNU"
-#endif
-/* __INTEL_LLVM_COMPILER = VVVVRP prior to 2021.2.0, VVVVRRPP for 2021.2.0 and
- * later.  Look for 6 digit vs. 8 digit version number to decide encoding.
- * VVVV is no smaller than the current year when a version is released.
- */
-#if __INTEL_LLVM_COMPILER < 1000000L
-# define COMPILER_VERSION_MAJOR DEC(__INTEL_LLVM_COMPILER/100)
-# define COMPILER_VERSION_MINOR DEC(__INTEL_LLVM_COMPILER/10 % 10)
-# define COMPILER_VERSION_PATCH DEC(__INTEL_LLVM_COMPILER    % 10)
-#else
-# define COMPILER_VERSION_MAJOR DEC(__INTEL_LLVM_COMPILER/10000)
-# define COMPILER_VERSION_MINOR DEC(__INTEL_LLVM_COMPILER/100 % 100)
-# define COMPILER_VERSION_PATCH DEC(__INTEL_LLVM_COMPILER     % 100)
-#endif
-#if defined(_MSC_VER)
-  /* _MSC_VER = VVRR */
-# define SIMULATE_VERSION_MAJOR DEC(_MSC_VER / 100)
-# define SIMULATE_VERSION_MINOR DEC(_MSC_VER % 100)
-#endif
-#if defined(__GNUC__)
-# define SIMULATE_VERSION_MAJOR DEC(__GNUC__)
-#elif defined(__GNUG__)
-# define SIMULATE_VERSION_MAJOR DEC(__GNUG__)
-#endif
-#if defined(__GNUC_MINOR__)
-# define SIMULATE_VERSION_MINOR DEC(__GNUC_MINOR__)
-#endif
-#if defined(__GNUC_PATCHLEVEL__)
-# define SIMULATE_VERSION_PATCH DEC(__GNUC_PATCHLEVEL__)
-#endif
-
-#elif defined(__PATHCC__)
-# define COMPILER_ID "PathScale"
-# define COMPILER_VERSION_MAJOR DEC(__PATHCC__)
-# define COMPILER_VERSION_MINOR DEC(__PATHCC_MINOR__)
-# if defined(__PATHCC_PATCHLEVEL__)
-#  define COMPILER_VERSION_PATCH DEC(__PATHCC_PATCHLEVEL__)
-# endif
-
-#elif defined(__BORLANDC__) && defined(__CODEGEARC_VERSION__)
-# define COMPILER_ID "Embarcadero"
-# define COMPILER_VERSION_MAJOR HEX(__CODEGEARC_VERSION__>>24 & 0x00FF)
-# define COMPILER_VERSION_MINOR HEX(__CODEGEARC_VERSION__>>16 & 0x00FF)
-# define COMPILER_VERSION_PATCH DEC(__CODEGEARC_VERSION__     & 0xFFFF)
-
-#elif defined(__BORLANDC__)
-# define COMPILER_ID "Borland"
-  /* __BORLANDC__ = 0xVRR */
-# define COMPILER_VERSION_MAJOR HEX(__BORLANDC__>>8)
-# define COMPILER_VERSION_MINOR HEX(__BORLANDC__ & 0xFF)
-
-#elif defined(__WATCOMC__) && __WATCOMC__ < 1200
-# define COMPILER_ID "Watcom"
-   /* __WATCOMC__ = VVRR */
-# define COMPILER_VERSION_MAJOR DEC(__WATCOMC__ / 100)
-# define COMPILER_VERSION_MINOR DEC((__WATCOMC__ / 10) % 10)
-# if (__WATCOMC__ % 10) > 0
-#  define COMPILER_VERSION_PATCH DEC(__WATCOMC__ % 10)
-# endif
-
-#elif defined(__WATCOMC__)
-# define COMPILER_ID "OpenWatcom"
-   /* __WATCOMC__ = VVRP + 1100 */
-# define COMPILER_VERSION_MAJOR DEC((__WATCOMC__ - 1100) / 100)
-# define COMPILER_VERSION_MINOR DEC((__WATCOMC__ / 10) % 10)
-# if (__WATCOMC__ % 10) > 0
-#  define COMPILER_VERSION_PATCH DEC(__WATCOMC__ % 10)
-# endif
-
-#elif defined(__SUNPRO_CC)
-# define COMPILER_ID "SunPro"
-# if __SUNPRO_CC >= 0x5100
-   /* __SUNPRO_CC = 0xVRRP */
-#  define COMPILER_VERSION_MAJOR HEX(__SUNPRO_CC>>12)
-#  define COMPILER_VERSION_MINOR HEX(__SUNPRO_CC>>4 & 0xFF)
-#  define COMPILER_VERSION_PATCH HEX(__SUNPRO_CC    & 0xF)
-# else
-   /* __SUNPRO_CC = 0xVRP */
-#  define COMPILER_VERSION_MAJOR HEX(__SUNPRO_CC>>8)
-#  define COMPILER_VERSION_MINOR HEX(__SUNPRO_CC>>4 & 0xF)
-#  define COMPILER_VERSION_PATCH HEX(__SUNPRO_CC    & 0xF)
-# endif
-
-#elif defined(__HP_aCC)
-# define COMPILER_ID "HP"
-  /* __HP_aCC = VVRRPP */
-# define COMPILER_VERSION_MAJOR DEC(__HP_aCC/10000)
-# define COMPILER_VERSION_MINOR DEC(__HP_aCC/100 % 100)
-# define COMPILER_VERSION_PATCH DEC(__HP_aCC     % 100)
-
-#elif defined(__DECCXX)
-# define COMPILER_ID "Compaq"
-  /* __DECCXX_VER = VVRRTPPPP */
-# define COMPILER_VERSION_MAJOR DEC(__DECCXX_VER/10000000)
-# define COMPILER_VERSION_MINOR DEC(__DECCXX_VER/100000  % 100)
-# define COMPILER_VERSION_PATCH DEC(__DECCXX_VER         % 10000)
-
-#elif defined(__IBMCPP__) && defined(__COMPILER_VER__)
-# define COMPILER_ID "zOS"
-  /* __IBMCPP__ = VRP */
-# define COMPILER_VERSION_MAJOR DEC(__IBMCPP__/100)
-# define COMPILER_VERSION_MINOR DEC(__IBMCPP__/10 % 10)
-# define COMPILER_VERSION_PATCH DEC(__IBMCPP__    % 10)
-
-#elif defined(__open_xl__) && defined(__clang__)
-# define COMPILER_ID "IBMClang"
-# define COMPILER_VERSION_MAJOR DEC(__open_xl_version__)
-# define COMPILER_VERSION_MINOR DEC(__open_xl_release__)
-# define COMPILER_VERSION_PATCH DEC(__open_xl_modification__)
-# define COMPILER_VERSION_TWEAK DEC(__open_xl_ptf_fix_level__)
-# define COMPILER_VERSION_INTERNAL_STR  __clang_version__
-
-
-#elif defined(__ibmxl__) && defined(__clang__)
-# define COMPILER_ID "XLClang"
-# define COMPILER_VERSION_MAJOR DEC(__ibmxl_version__)
-# define COMPILER_VERSION_MINOR DEC(__ibmxl_release__)
-# define COMPILER_VERSION_PATCH DEC(__ibmxl_modification__)
-# define COMPILER_VERSION_TWEAK DEC(__ibmxl_ptf_fix_level__)
-
-
-#elif defined(__IBMCPP__) && !defined(__COMPILER_VER__) && __IBMCPP__ >= 800
-# define COMPILER_ID "XL"
-  /* __IBMCPP__ = VRP */
-# define COMPILER_VERSION_MAJOR DEC(__IBMCPP__/100)
-# define COMPILER_VERSION_MINOR DEC(__IBMCPP__/10 % 10)
-# define COMPILER_VERSION_PATCH DEC(__IBMCPP__    % 10)
-
-#elif defined(__IBMCPP__) && !defined(__COMPILER_VER__) && __IBMCPP__ < 800
-# define COMPILER_ID "VisualAge"
-  /* __IBMCPP__ = VRP */
-# define COMPILER_VERSION_MAJOR DEC(__IBMCPP__/100)
-# define COMPILER_VERSION_MINOR DEC(__IBMCPP__/10 % 10)
-# define COMPILER_VERSION_PATCH DEC(__IBMCPP__    % 10)
-
-#elif defined(__NVCOMPILER)
-# define COMPILER_ID "NVHPC"
-# define COMPILER_VERSION_MAJOR DEC(__NVCOMPILER_MAJOR__)
-# define COMPILER_VERSION_MINOR DEC(__NVCOMPILER_MINOR__)
-# if defined(__NVCOMPILER_PATCHLEVEL__)
-#  define COMPILER_VERSION_PATCH DEC(__NVCOMPILER_PATCHLEVEL__)
-# endif
-
-#elif defined(__PGI)
-# define COMPILER_ID "PGI"
-# define COMPILER_VERSION_MAJOR DEC(__PGIC__)
-# define COMPILER_VERSION_MINOR DEC(__PGIC_MINOR__)
-# if defined(__PGIC_PATCHLEVEL__)
-#  define COMPILER_VERSION_PATCH DEC(__PGIC_PATCHLEVEL__)
-# endif
-
-#elif defined(__clang__) && defined(__cray__)
-# define COMPILER_ID "CrayClang"
-# define COMPILER_VERSION_MAJOR DEC(__cray_major__)
-# define COMPILER_VERSION_MINOR DEC(__cray_minor__)
-# define COMPILER_VERSION_PATCH DEC(__cray_patchlevel__)
-# define COMPILER_VERSION_INTERNAL_STR __clang_version__
-
-
-#elif defined(_CRAYC)
-# define COMPILER_ID "Cray"
-# define COMPILER_VERSION_MAJOR DEC(_RELEASE_MAJOR)
-# define COMPILER_VERSION_MINOR DEC(_RELEASE_MINOR)
-
-#elif defined(__TI_COMPILER_VERSION__)
-# define COMPILER_ID "TI"
-  /* __TI_COMPILER_VERSION__ = VVVRRRPPP */
-# define COMPILER_VERSION_MAJOR DEC(__TI_COMPILER_VERSION__/1000000)
-# define COMPILER_VERSION_MINOR DEC(__TI_COMPILER_VERSION__/1000   % 1000)
-# define COMPILER_VERSION_PATCH DEC(__TI_COMPILER_VERSION__        % 1000)
-
-#elif defined(__CLANG_FUJITSU)
-# define COMPILER_ID "FujitsuClang"
-# define COMPILER_VERSION_MAJOR DEC(__FCC_major__)
-# define COMPILER_VERSION_MINOR DEC(__FCC_minor__)
-# define COMPILER_VERSION_PATCH DEC(__FCC_patchlevel__)
-# define COMPILER_VERSION_INTERNAL_STR __clang_version__
-
-
-#elif defined(__FUJITSU)
-# define COMPILER_ID "Fujitsu"
-# if defined(__FCC_version__)
-#   define COMPILER_VERSION __FCC_version__
-# elif defined(__FCC_major__)
-#   define COMPILER_VERSION_MAJOR DEC(__FCC_major__)
-#   define COMPILER_VERSION_MINOR DEC(__FCC_minor__)
-#   define COMPILER_VERSION_PATCH DEC(__FCC_patchlevel__)
-# endif
-# if defined(__fcc_version)
-#   define COMPILER_VERSION_INTERNAL DEC(__fcc_version)
-# elif defined(__FCC_VERSION)
-#   define COMPILER_VERSION_INTERNAL DEC(__FCC_VERSION)
-# endif
-
-
-#elif defined(__ghs__)
-# define COMPILER_ID "GHS"
-/* __GHS_VERSION_NUMBER = VVVVRP */
-# ifdef __GHS_VERSION_NUMBER
-# define COMPILER_VERSION_MAJOR DEC(__GHS_VERSION_NUMBER / 100)
-# define COMPILER_VERSION_MINOR DEC(__GHS_VERSION_NUMBER / 10 % 10)
-# define COMPILER_VERSION_PATCH DEC(__GHS_VERSION_NUMBER      % 10)
-# endif
-
-#elif defined(__TASKING__)
-# define COMPILER_ID "Tasking"
-  # define COMPILER_VERSION_MAJOR DEC(__VERSION__/1000)
-  # define COMPILER_VERSION_MINOR DEC(__VERSION__ % 100)
-# define COMPILER_VERSION_INTERNAL DEC(__VERSION__)
-
-#elif defined(__ORANGEC__)
-# define COMPILER_ID "OrangeC"
-# define COMPILER_VERSION_MAJOR DEC(__ORANGEC_MAJOR__)
-# define COMPILER_VERSION_MINOR DEC(__ORANGEC_MINOR__)
-# define COMPILER_VERSION_PATCH DEC(__ORANGEC_PATCHLEVEL__)
-
-#elif defined(__RENESAS__)
-# define COMPILER_ID "Renesas"
-/* __RENESAS_VERSION__ = 0xVVRRPP00 */
-# define COMPILER_VERSION_MAJOR HEX(__RENESAS_VERSION__ >> 24 & 0xFF)
-# define COMPILER_VERSION_MINOR HEX(__RENESAS_VERSION__ >> 16 & 0xFF)
-# define COMPILER_VERSION_PATCH HEX(__RENESAS_VERSION__ >> 8  & 0xFF)
-
-#elif defined(__SCO_VERSION__)
-# define COMPILER_ID "SCO"
-
-#elif defined(__ARMCC_VERSION) && !defined(__clang__)
-# define COMPILER_ID "ARMCC"
-#if __ARMCC_VERSION >= 1000000
-  /* __ARMCC_VERSION = VRRPPPP */
-  # define COMPILER_VERSION_MAJOR DEC(__ARMCC_VERSION/1000000)
-  # define COMPILER_VERSION_MINOR DEC(__ARMCC_VERSION/10000 % 100)
-  # define COMPILER_VERSION_PATCH DEC(__ARMCC_VERSION     % 10000)
-#else
-  /* __ARMCC_VERSION = VRPPPP */
-  # define COMPILER_VERSION_MAJOR DEC(__ARMCC_VERSION/100000)
-  # define COMPILER_VERSION_MINOR DEC(__ARMCC_VERSION/10000 % 10)
-  # define COMPILER_VERSION_PATCH DEC(__ARMCC_VERSION    % 10000)
-#endif
-
-
-#elif defined(__clang__) && defined(__apple_build_version__)
-# define COMPILER_ID "AppleClang"
-# if defined(_MSC_VER)
-#  define SIMULATE_ID "MSVC"
-# endif
-# define COMPILER_VERSION_MAJOR DEC(__clang_major__)
-# define COMPILER_VERSION_MINOR DEC(__clang_minor__)
-# define COMPILER_VERSION_PATCH DEC(__clang_patchlevel__)
-# if defined(_MSC_VER)
-   /* _MSC_VER = VVRR */
-#  define SIMULATE_VERSION_MAJOR DEC(_MSC_VER / 100)
-#  define SIMULATE_VERSION_MINOR DEC(_MSC_VER % 100)
-# endif
-# define COMPILER_VERSION_TWEAK DEC(__apple_build_version__)
-
-#elif defined(__clang__) && defined(__ARMCOMPILER_VERSION)
-# define COMPILER_ID "ARMClang"
-  # define COMPILER_VERSION_MAJOR DEC(__ARMCOMPILER_VERSION/1000000)
-  # define COMPILER_VERSION_MINOR DEC(__ARMCOMPILER_VERSION/10000 % 100)
-  # define COMPILER_VERSION_PATCH DEC(__ARMCOMPILER_VERSION/100   % 100)
-# define COMPILER_VERSION_INTERNAL DEC(__ARMCOMPILER_VERSION)
-
-#elif defined(__clang__) && defined(__ti__)
-# define COMPILER_ID "TIClang"
-  # define COMPILER_VERSION_MAJOR DEC(__ti_major__)
-  # define COMPILER_VERSION_MINOR DEC(__ti_minor__)
-  # define COMPILER_VERSION_PATCH DEC(__ti_patchlevel__)
-# define COMPILER_VERSION_INTERNAL DEC(__ti_version__)
-
-#elif defined(__clang__)
-# define COMPILER_ID "Clang"
-# if defined(_MSC_VER)
-#  define SIMULATE_ID "MSVC"
-# endif
-# define COMPILER_VERSION_MAJOR DEC(__clang_major__)
-# define COMPILER_VERSION_MINOR DEC(__clang_minor__)
-# define COMPILER_VERSION_PATCH DEC(__clang_patchlevel__)
-# if defined(_MSC_VER)
-   /* _MSC_VER = VVRR */
-#  define SIMULATE_VERSION_MAJOR DEC(_MSC_VER / 100)
-#  define SIMULATE_VERSION_MINOR DEC(_MSC_VER % 100)
-# endif
-
-#elif defined(__LCC__) && (defined(__GNUC__) || defined(__GNUG__) || defined(__MCST__))
-# define COMPILER_ID "LCC"
-# define COMPILER_VERSION_MAJOR DEC(__LCC__ / 100)
-# define COMPILER_VERSION_MINOR DEC(__LCC__ % 100)
-# if defined(__LCC_MINOR__)
-#  define COMPILER_VERSION_PATCH DEC(__LCC_MINOR__)
-# endif
-# if defined(__GNUC__) && defined(__GNUC_MINOR__)
-#  define SIMULATE_ID "GNU"
-#  define SIMULATE_VERSION_MAJOR DEC(__GNUC__)
-#  define SIMULATE_VERSION_MINOR DEC(__GNUC_MINOR__)
-#  if defined(__GNUC_PATCHLEVEL__)
-#   define SIMULATE_VERSION_PATCH DEC(__GNUC_PATCHLEVEL__)
-#  endif
-# endif
-
-#elif defined(__GNUC__) || defined(__GNUG__)
-# define COMPILER_ID "GNU"
-# if defined(__GNUC__)
-#  define COMPILER_VERSION_MAJOR DEC(__GNUC__)
-# else
-#  define COMPILER_VERSION_MAJOR DEC(__GNUG__)
-# endif
-# if defined(__GNUC_MINOR__)
-#  define COMPILER_VERSION_MINOR DEC(__GNUC_MINOR__)
-# endif
-# if defined(__GNUC_PATCHLEVEL__)
-#  define COMPILER_VERSION_PATCH DEC(__GNUC_PATCHLEVEL__)
-# endif
-
-#elif defined(_MSC_VER)
-# define COMPILER_ID "MSVC"
-  /* _MSC_VER = VVRR */
-# define COMPILER_VERSION_MAJOR DEC(_MSC_VER / 100)
-# define COMPILER_VERSION_MINOR DEC(_MSC_VER % 100)
-# if defined(_MSC_FULL_VER)
-#  if _MSC_VER >= 1400
-    /* _MSC_FULL_VER = VVRRPPPPP */
-#   define COMPILER_VERSION_PATCH DEC(_MSC_FULL_VER % 100000)
-#  else
-    /* _MSC_FULL_VER = VVRRPPPP */
-#   define COMPILER_VERSION_PATCH DEC(_MSC_FULL_VER % 10000)
-#  endif
-# endif
-# if defined(_MSC_BUILD)
-#  define COMPILER_VERSION_TWEAK DEC(_MSC_BUILD)
-# endif
-
-#elif defined(_ADI_COMPILER)
-# define COMPILER_ID "ADSP"
-#if defined(__VERSIONNUM__)
-  /* __VERSIONNUM__ = 0xVVRRPPTT */
-#  define COMPILER_VERSION_MAJOR DEC(__VERSIONNUM__ >> 24 & 0xFF)
-#  define COMPILER_VERSION_MINOR DEC(__VERSIONNUM__ >> 16 & 0xFF)
-#  define COMPILER_VERSION_PATCH DEC(__VERSIONNUM__ >> 8 & 0xFF)
-#  define COMPILER_VERSION_TWEAK DEC(__VERSIONNUM__ & 0xFF)
-#endif
-
-#elif defined(__IAR_SYSTEMS_ICC__) || defined(__IAR_SYSTEMS_ICC)
-# define COMPILER_ID "IAR"
-# if defined(__VER__) && defined(__ICCARM__)
-#  define COMPILER_VERSION_MAJOR DEC((__VER__) / 1000000)
-#  define COMPILER_VERSION_MINOR DEC(((__VER__) / 1000) % 1000)
-#  define COMPILER_VERSION_PATCH DEC((__VER__) % 1000)
-#  define COMPILER_VERSION_INTERNAL DEC(__IAR_SYSTEMS_ICC__)
-# elif defined(__VER__) && (defined(__ICCAVR__) || defined(__ICCRX__) || defined(__ICCRH850__) || defined(__ICCRL78__) || defined(__ICC430__) || defined(__ICCRISCV__) || defined(__ICCV850__) || defined(__ICC8051__) || defined(__ICCSTM8__))
-#  define COMPILER_VERSION_MAJOR DEC((__VER__) / 100)
-#  define COMPILER_VERSION_MINOR DEC((__VER__) - (((__VER__) / 100)*100))
-#  define COMPILER_VERSION_PATCH DEC(__SUBVERSION__)
-#  define COMPILER_VERSION_INTERNAL DEC(__IAR_SYSTEMS_ICC__)
-# endif
-
-#elif defined(__DCC__) && defined(_DIAB_TOOL)
-# define COMPILER_ID "Diab"
-  # define COMPILER_VERSION_MAJOR DEC(__VERSION_MAJOR_NUMBER__)
-  # define COMPILER_VERSION_MINOR DEC(__VERSION_MINOR_NUMBER__)
-  # define COMPILER_VERSION_PATCH DEC(__VERSION_ARCH_FEATURE_NUMBER__)
-  # define COMPILER_VERSION_TWEAK DEC(__VERSION_BUG_FIX_NUMBER__)
-
-
-
-/* These compilers are either not known or too old to define an
-  identification macro.  Try to identify the platform and guess that
-  it is the native compiler.  */
-#elif defined(__hpux) || defined(__hpua)
-# define COMPILER_ID "HP"
-
-#else /* unknown compiler */
-# define COMPILER_ID ""
-#endif
-
-/* Construct the string literal in pieces to prevent the source from
-   getting matched.  Store it in a pointer rather than an array
-   because some compilers will just produce instructions to fill the
-   array rather than assigning a pointer to a static array.  */
-char const* info_compiler = "INFO" ":" "compiler[" COMPILER_ID "]";
-#ifdef SIMULATE_ID
-char const* info_simulate = "INFO" ":" "simulate[" SIMULATE_ID "]";
-#endif
-
-#ifdef __QNXNTO__
-char const* qnxnto = "INFO" ":" "qnxnto[]";
-#endif
-
-#if defined(__CRAYXT_COMPUTE_LINUX_TARGET)
-char const *info_cray = "INFO" ":" "compiler_wrapper[CrayPrgEnv]";
-#endif
-
-#define STRINGIFY_HELPER(X) #X
-#define STRINGIFY(X) STRINGIFY_HELPER(X)
-
-/* Identify known platforms by name.  */
-#if defined(__linux) || defined(__linux__) || defined(linux)
-# define PLATFORM_ID "Linux"
-
-#elif defined(__MSYS__)
-# define PLATFORM_ID "MSYS"
-
-#elif defined(__CYGWIN__)
-# define PLATFORM_ID "Cygwin"
-
-#elif defined(__MINGW32__)
-# define PLATFORM_ID "MinGW"
-
-#elif defined(__APPLE__)
-# define PLATFORM_ID "Darwin"
-
-#elif defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
-# define PLATFORM_ID "Windows"
-
-#elif defined(__FreeBSD__) || defined(__FreeBSD)
-# define PLATFORM_ID "FreeBSD"
-
-#elif defined(__NetBSD__) || defined(__NetBSD)
-# define PLATFORM_ID "NetBSD"
-
-#elif defined(__OpenBSD__) || defined(__OPENBSD)
-# define PLATFORM_ID "OpenBSD"
-
-#elif defined(__sun) || defined(sun)
-# define PLATFORM_ID "SunOS"
-
-#elif defined(_AIX) || defined(__AIX) || defined(__AIX__) || defined(__aix) || defined(__aix__)
-# define PLATFORM_ID "AIX"
-
-#elif defined(__hpux) || defined(__hpux__)
-# define PLATFORM_ID "HP-UX"
-
-#elif defined(__HAIKU__)
-# define PLATFORM_ID "Haiku"
-
-#elif defined(__BeOS) || defined(__BEOS__) || defined(_BEOS)
-# define PLATFORM_ID "BeOS"
-
-#elif defined(__QNX__) || defined(__QNXNTO__)
-# define PLATFORM_ID "QNX"
-
-#elif defined(__tru64) || defined(_tru64) || defined(__TRU64__)
-# define PLATFORM_ID "Tru64"
-
-#elif defined(__riscos) || defined(__riscos__)
-# define PLATFORM_ID "RISCos"
-
-#elif defined(__sinix) || defined(__sinix__) || defined(__SINIX__)
-# define PLATFORM_ID "SINIX"
-
-#elif defined(__UNIX_SV__)
-# define PLATFORM_ID "UNIX_SV"
-
-#elif defined(__bsdos__)
-# define PLATFORM_ID "BSDOS"
-
-#elif defined(_MPRAS) || defined(MPRAS)
-# define PLATFORM_ID "MP-RAS"
-
-#elif defined(__osf) || defined(__osf__)
-# define PLATFORM_ID "OSF1"
-
-#elif defined(_SCO_SV) || defined(SCO_SV) || defined(sco_sv)
-# define PLATFORM_ID "SCO_SV"
-
-#elif defined(__ultrix) || defined(__ultrix__) || defined(_ULTRIX)
-# define PLATFORM_ID "ULTRIX"
-
-#elif defined(__XENIX__) || defined(_XENIX) || defined(XENIX)
-# define PLATFORM_ID "Xenix"
-
-#elif defined(__WATCOMC__)
-# if defined(__LINUX__)
-#  define PLATFORM_ID "Linux"
-
-# elif defined(__DOS__)
-#  define PLATFORM_ID "DOS"
-
-# elif defined(__OS2__)
-#  define PLATFORM_ID "OS2"
-
-# elif defined(__WINDOWS__)
-#  define PLATFORM_ID "Windows3x"
-
-# elif defined(__VXWORKS__)
-#  define PLATFORM_ID "VxWorks"
-
-# else /* unknown platform */
-#  define PLATFORM_ID
-# endif
-
-#elif defined(__INTEGRITY)
-# if defined(INT_178B)
-#  define PLATFORM_ID "Integrity178"
-
-# else /* regular Integrity */
-#  define PLATFORM_ID "Integrity"
-# endif
-
-# elif defined(_ADI_COMPILER)
-#  define PLATFORM_ID "ADSP"
-
-#else /* unknown platform */
-# define PLATFORM_ID
-
-#endif
-
-/* For windows compilers MSVC and Intel we can determine
-   the architecture of the compiler being used.  This is because
-   the compilers do not have flags that can change the architecture,
-   but rather depend on which compiler is being used
-*/
-#if defined(_WIN32) && defined(_MSC_VER)
-# if defined(_M_IA64)
-#  define ARCHITECTURE_ID "IA64"
-
-# elif defined(_M_ARM64EC)
-#  define ARCHITECTURE_ID "ARM64EC"
-
-# elif defined(_M_X64) || defined(_M_AMD64)
-#  define ARCHITECTURE_ID "x64"
-
-# elif defined(_M_IX86)
-#  define ARCHITECTURE_ID "X86"
-
-# elif defined(_M_ARM64)
-#  define ARCHITECTURE_ID "ARM64"
-
-# elif defined(_M_ARM)
-#  if _M_ARM == 4
-#   define ARCHITECTURE_ID "ARMV4I"
-#  elif _M_ARM == 5
-#   define ARCHITECTURE_ID "ARMV5I"
-#  else
-#   define ARCHITECTURE_ID "ARMV" STRINGIFY(_M_ARM)
-#  endif
-
-# elif defined(_M_MIPS)
-#  define ARCHITECTURE_ID "MIPS"
-
-# elif defined(_M_SH)
-#  define ARCHITECTURE_ID "SHx"
-
-# else /* unknown architecture */
-#  define ARCHITECTURE_ID ""
-# endif
-
-#elif defined(__WATCOMC__)
-# if defined(_M_I86)
-#  define ARCHITECTURE_ID "I86"
-
-# elif defined(_M_IX86)
-#  define ARCHITECTURE_ID "X86"
-
-# else /* unknown architecture */
-#  define ARCHITECTURE_ID ""
-# endif
-
-#elif defined(__IAR_SYSTEMS_ICC__) || defined(__IAR_SYSTEMS_ICC)
-# if defined(__ICCARM__)
-#  define ARCHITECTURE_ID "ARM"
-
-# elif defined(__ICCRX__)
-#  define ARCHITECTURE_ID "RX"
-
-# elif defined(__ICCRH850__)
-#  define ARCHITECTURE_ID "RH850"
-
-# elif defined(__ICCRL78__)
-#  define ARCHITECTURE_ID "RL78"
-
-# elif defined(__ICCRISCV__)
-#  define ARCHITECTURE_ID "RISCV"
-
-# elif defined(__ICCAVR__)
-#  define ARCHITECTURE_ID "AVR"
-
-# elif defined(__ICC430__)
-#  define ARCHITECTURE_ID "MSP430"
-
-# elif defined(__ICCV850__)
-#  define ARCHITECTURE_ID "V850"
-
-# elif defined(__ICC8051__)
-#  define ARCHITECTURE_ID "8051"
-
-# elif defined(__ICCSTM8__)
-#  define ARCHITECTURE_ID "STM8"
-
-# else /* unknown architecture */
-#  define ARCHITECTURE_ID ""
-# endif
-
-#elif defined(__ghs__)
-# if defined(__PPC64__)
-#  define ARCHITECTURE_ID "PPC64"
-
-# elif defined(__ppc__)
-#  define ARCHITECTURE_ID "PPC"
-
-# elif defined(__ARM__)
-#  define ARCHITECTURE_ID "ARM"
-
-# elif defined(__x86_64__)
-#  define ARCHITECTURE_ID "x64"
-
-# elif defined(__i386__)
-#  define ARCHITECTURE_ID "X86"
-
-# else /* unknown architecture */
-#  define ARCHITECTURE_ID ""
-# endif
-
-#elif defined(__clang__) && defined(__ti__)
-# if defined(__ARM_ARCH)
-#  define ARCHITECTURE_ID "ARM"
-
-# else /* unknown architecture */
-#  define ARCHITECTURE_ID ""
-# endif
-
-#elif defined(__TI_COMPILER_VERSION__)
-# if defined(__TI_ARM__)
-#  define ARCHITECTURE_ID "ARM"
-
-# elif defined(__MSP430__)
-#  define ARCHITECTURE_ID "MSP430"
-
-# elif defined(__TMS320C28XX__)
-#  define ARCHITECTURE_ID "TMS320C28x"
-
-# elif defined(__TMS320C6X__) || defined(_TMS320C6X)
-#  define ARCHITECTURE_ID "TMS320C6x"
-
-# else /* unknown architecture */
-#  define ARCHITECTURE_ID ""
-# endif
-
-# elif defined(__ADSPSHARC__)
-#  define ARCHITECTURE_ID "SHARC"
-
-# elif defined(__ADSPBLACKFIN__)
-#  define ARCHITECTURE_ID "Blackfin"
-
-#elif defined(__TASKING__)
-
-# if defined(__CTC__) || defined(__CPTC__)
-#  define ARCHITECTURE_ID "TriCore"
-
-# elif defined(__CMCS__)
-#  define ARCHITECTURE_ID "MCS"
-
-# elif defined(__CARM__) || defined(__CPARM__)
-#  define ARCHITECTURE_ID "ARM"
-
-# elif defined(__CARC__)
-#  define ARCHITECTURE_ID "ARC"
-
-# elif defined(__C51__)
-#  define ARCHITECTURE_ID "8051"
-
-# elif defined(__CPCP__)
-#  define ARCHITECTURE_ID "PCP"
-
-# else
-#  define ARCHITECTURE_ID ""
-# endif
-
-#elif defined(__RENESAS__)
-# if defined(__CCRX__)
-#  define ARCHITECTURE_ID "RX"
-
-# elif defined(__CCRL__)
-#  define ARCHITECTURE_ID "RL78"
-
-# elif defined(__CCRH__)
-#  define ARCHITECTURE_ID "RH850"
-
-# else
-#  define ARCHITECTURE_ID ""
-# endif
-
-#else
-#  define ARCHITECTURE_ID
-#endif
-
-/* Convert integer to decimal digit literals.  */
-#define DEC(n)                   \
-  ('0' + (((n) / 10000000)%10)), \
-  ('0' + (((n) / 1000000)%10)),  \
-  ('0' + (((n) / 100000)%10)),   \
-  ('0' + (((n) / 10000)%10)),    \
-  ('0' + (((n) / 1000)%10)),     \
-  ('0' + (((n) / 100)%10)),      \
-  ('0' + (((n) / 10)%10)),       \
-  ('0' +  ((n) % 10))
-
-/* Convert integer to hex digit literals.  */
-#define HEX(n)             \
-  ('0' + ((n)>>28 & 0xF)), \
-  ('0' + ((n)>>24 & 0xF)), \
-  ('0' + ((n)>>20 & 0xF)), \
-  ('0' + ((n)>>16 & 0xF)), \
-  ('0' + ((n)>>12 & 0xF)), \
-  ('0' + ((n)>>8  & 0xF)), \
-  ('0' + ((n)>>4  & 0xF)), \
-  ('0' + ((n)     & 0xF))
-
-/* Construct a string literal encoding the version number. */
-#ifdef COMPILER_VERSION
-char const* info_version = "INFO" ":" "compiler_version[" COMPILER_VERSION "]";
-
-/* Construct a string literal encoding the version number components. */
-#elif defined(COMPILER_VERSION_MAJOR)
-char const info_version[] = {
-  'I', 'N', 'F', 'O', ':',
-  'c','o','m','p','i','l','e','r','_','v','e','r','s','i','o','n','[',
-  COMPILER_VERSION_MAJOR,
-# ifdef COMPILER_VERSION_MINOR
-  '.', COMPILER_VERSION_MINOR,
-#  ifdef COMPILER_VERSION_PATCH
-   '.', COMPILER_VERSION_PATCH,
-#   ifdef COMPILER_VERSION_TWEAK
-    '.', COMPILER_VERSION_TWEAK,
-#   endif
-#  endif
-# endif
-  ']','\0'};
-#endif
-
-/* Construct a string literal encoding the internal version number. */
-#ifdef COMPILER_VERSION_INTERNAL
-char const info_version_internal[] = {
-  'I', 'N', 'F', 'O', ':',
-  'c','o','m','p','i','l','e','r','_','v','e','r','s','i','o','n','_',
-  'i','n','t','e','r','n','a','l','[',
-  COMPILER_VERSION_INTERNAL,']','\0'};
-#elif defined(COMPILER_VERSION_INTERNAL_STR)
-char const* info_version_internal = "INFO" ":" "compiler_version_internal[" COMPILER_VERSION_INTERNAL_STR "]";
-#endif
-
-/* Construct a string literal encoding the version number components. */
-#ifdef SIMULATE_VERSION_MAJOR
-char const info_simulate_version[] = {
-  'I', 'N', 'F', 'O', ':',
-  's','i','m','u','l','a','t','e','_','v','e','r','s','i','o','n','[',
-  SIMULATE_VERSION_MAJOR,
-# ifdef SIMULATE_VERSION_MINOR
-  '.', SIMULATE_VERSION_MINOR,
-#  ifdef SIMULATE_VERSION_PATCH
-   '.', SIMULATE_VERSION_PATCH,
-#   ifdef SIMULATE_VERSION_TWEAK
-    '.', SIMULATE_VERSION_TWEAK,
-#   endif
-#  endif
-# endif
-  ']','\0'};
-#endif
-
-/* Construct the string literal in pieces to prevent the source from
-   getting matched.  Store it in a pointer rather than an array
-   because some compilers will just produce instructions to fill the
-   array rather than assigning a pointer to a static array.  */
-char const* info_platform = "INFO" ":" "platform[" PLATFORM_ID "]";
-char const* info_arch = "INFO" ":" "arch[" ARCHITECTURE_ID "]";
-
-
-
-#define CXX_STD_98 199711L
-#define CXX_STD_11 201103L
-#define CXX_STD_14 201402L
-#define CXX_STD_17 201703L
-#define CXX_STD_20 202002L
-#define CXX_STD_23 202302L
-
-#if defined(__INTEL_COMPILER) && defined(_MSVC_LANG)
-#  if _MSVC_LANG > CXX_STD_17
-#    define CXX_STD _MSVC_LANG
-#  elif _MSVC_LANG == CXX_STD_17 && defined(__cpp_aggregate_paren_init)
-#    define CXX_STD CXX_STD_20
-#  elif _MSVC_LANG > CXX_STD_14 && __cplusplus > CXX_STD_17
-#    define CXX_STD CXX_STD_20
-#  elif _MSVC_LANG > CXX_STD_14
-#    define CXX_STD CXX_STD_17
-#  elif defined(__INTEL_CXX11_MODE__) && defined(__cpp_aggregate_nsdmi)
-#    define CXX_STD CXX_STD_14
-#  elif defined(__INTEL_CXX11_MODE__)
-#    define CXX_STD CXX_STD_11
-#  else
-#    define CXX_STD CXX_STD_98
-#  endif
-#elif defined(_MSC_VER) && defined(_MSVC_LANG)
-#  if _MSVC_LANG > __cplusplus
-#    define CXX_STD _MSVC_LANG
-#  else
-#    define CXX_STD __cplusplus
-#  endif
-#elif defined(__NVCOMPILER)
-#  if __cplusplus == CXX_STD_17 && defined(__cpp_aggregate_paren_init)
-#    define CXX_STD CXX_STD_20
-#  else
-#    define CXX_STD __cplusplus
-#  endif
-#elif defined(__INTEL_COMPILER) || defined(__PGI)
-#  if __cplusplus == CXX_STD_11 && defined(__cpp_namespace_attributes)
-#    define CXX_STD CXX_STD_17
-#  elif __cplusplus == CXX_STD_11 && defined(__cpp_aggregate_nsdmi)
-#    define CXX_STD CXX_STD_14
-#  else
-#    define CXX_STD __cplusplus
-#  endif
-#elif (defined(__IBMCPP__) || defined(__ibmxl__)) && defined(__linux__)
-#  if __cplusplus == CXX_STD_11 && defined(__cpp_aggregate_nsdmi)
-#    define CXX_STD CXX_STD_14
-#  else
-#    define CXX_STD __cplusplus
-#  endif
-#elif __cplusplus == 1 && defined(__GXX_EXPERIMENTAL_CXX0X__)
-#  define CXX_STD CXX_STD_11
-#else
-#  define CXX_STD __cplusplus
-#endif
-
-const char* info_language_standard_default = "INFO" ":" "standard_default["
-#if CXX_STD > CXX_STD_23
-  "26"
-#elif CXX_STD > CXX_STD_20
-  "23"
-#elif CXX_STD > CXX_STD_17
-  "20"
-#elif CXX_STD > CXX_STD_14
-  "17"
-#elif CXX_STD > CXX_STD_11
-  "14"
-#elif CXX_STD >= CXX_STD_11
-  "11"
-#else
-  "98"
-#endif
-"]";
-
-const char* info_language_extensions_default = "INFO" ":" "extensions_default["
-#if (defined(__clang__) || defined(__GNUC__) || defined(__xlC__) ||           \
-     defined(__TI_COMPILER_VERSION__) || defined(__RENESAS__)) &&             \
-  !defined(__STRICT_ANSI__)
-  "ON"
-#else
-  "OFF"
-#endif
-"]";
-
-/*--------------------------------------------------------------------------*/
-
-int main(int argc, char* argv[])
-{
-  int require = 0;
-  require += info_compiler[argc];
-  require += info_platform[argc];
-  require += info_arch[argc];
-#ifdef COMPILER_VERSION_MAJOR
-  require += info_version[argc];
-#endif
-#if defined(COMPILER_VERSION_INTERNAL) || defined(COMPILER_VERSION_INTERNAL_STR)
-  require += info_version_internal[argc];
-#endif
-#ifdef SIMULATE_ID
-  require += info_simulate[argc];
-#endif
-#ifdef SIMULATE_VERSION_MAJOR
-  require += info_simulate_version[argc];
-#endif
-#if defined(__CRAYXT_COMPUTE_LINUX_TARGET)
-  require += info_cray[argc];
-#endif
-  require += info_language_standard_default[argc];
-  require += info_language_extensions_default[argc];
-  (void)argv;
-  return require;
-}
-
-```
-
-
-### Файл: tests\integration\example_integration_test.cpp
-```cpp
-#include <catch2/catch_test_macros.hpp>
-
-/**
- * Пример интеграционного теста
- * Тестирует взаимодействие между компонентами системы
- */
-
-TEST_CASE("Integration Test Example", "[integration]") {
-    SECTION("Component interaction test") {
-        // Пример интеграционного теста
-        // Здесь будут тесты взаимодействия между компонентами
-        REQUIRE(true); // Placeholder
-    }
-    
-    SECTION("System workflow test") {
-        // Тест полного рабочего процесса системы
-        REQUIRE(true); // Placeholder
-    }
-}
-
-TEST_CASE("System Integration", "[integration][system]") {
-    SECTION("End-to-end test") {
-        // Сквозной тест системы
-        REQUIRE(true); // Placeholder
-    }
-}
-```
-
-
-### Файл: tests\mocks\example_mock_test.cpp
-```cpp
-#include <catch2/catch_test_macros.hpp>
-
-/**
- * Пример мок теста
- * Тестирует компоненты с использованием mock объектов
- */
-
-// Простой mock класс для демонстрации
-class MockComponent {
-public:
-    bool called = false;
-    
-    void mockMethod() {
-        called = true;
-    }
-    
-    bool wasCalled() const {
-        return called;
-    }
-};
-
-TEST_CASE("Mock Test Example", "[mock]") {
-    SECTION("Mock object behavior") {
-        MockComponent mock;
-        
-        REQUIRE_FALSE(mock.wasCalled());
-        
-        mock.mockMethod();
-        
-        REQUIRE(mock.wasCalled());
-    }
-    
-    SECTION("Mock interaction test") {
-        // Тест взаимодействия с mock объектами
-        MockComponent mock;
-        
-        // Симуляция вызова
-        mock.mockMethod();
-        
-        REQUIRE(mock.wasCalled());
-    }
-}
-
-TEST_CASE("Advanced Mock Testing", "[mock][advanced]") {
-    SECTION("Multiple mock objects") {
-        MockComponent mock1, mock2;
-        
-        mock1.mockMethod();
-        
-        REQUIRE(mock1.wasCalled());
-        REQUIRE_FALSE(mock2.wasCalled());
-    }
-}
-```
-
-
-### Файл: tests\unit\MathUtilities\coordinate_transformation_roundtrip_test.cpp
-```cpp
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_approx.hpp>
-#include <catch2/generators/catch_generators.hpp>
-#include <catch2/generators/catch_generators_random.hpp>
-
-#include "../../../include/math/FlightMath.h"
-#include <cmath>
-#include <numbers>
-
-using namespace Catch;
-using namespace core::math;
-
-// Feature: coordinate-system-ned-to-enu, Property 6: Coordinate Transformation Round-Trip
-// **Validates: Requirements 4.3**
-
-TEST_CASE("Property 6: Body to ENU to Body transformation round-trip preserves vector", 
-          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
-    
-    // Generate random angles and vectors
-    auto yaw = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
-    auto pitch = GENERATE(take(10, random(-std::numbers::pi / 2.0 + 0.1, std::numbers::pi / 2.0 - 0.1)));
-    auto roll = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
-    
-    auto vx = GENERATE(take(10, random(-100.0, 100.0)));
-    auto vy = GENERATE(take(10, random(-100.0, 100.0)));
-    auto vz = GENERATE(take(10, random(-100.0, 100.0)));
-    
-    Vector3 v_body(vx, vy, vz);
-    
-    SECTION("Transform body → ENU → body returns original vector") {
-        auto euler = EulerAngles::ZYX(yaw, pitch, roll);
-        Matrix3 dcm = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        // Transform body to ENU
-        Vector3 v_enu = rotateVector(v_body, dcm, CoordinateFrame::ENU, true);
-        
-        // Transform ENU back to body
-        Vector3 v_body_roundtrip = rotateVector(v_enu, dcm, CoordinateFrame::ENU, false);
-        
-        // Check that we got back the original vector
-        REQUIRE(v_body_roundtrip.x() == Approx(v_body.x()).margin(1e-10));
-        REQUIRE(v_body_roundtrip.y() == Approx(v_body.y()).margin(1e-10));
-        REQUIRE(v_body_roundtrip.z() == Approx(v_body.z()).margin(1e-10));
-        
-        // Check using norm
-        REQUIRE((v_body_roundtrip - v_body).norm() < 1e-10);
-    }
-}
-
-TEST_CASE("Property 6: ENU to Body to ENU transformation round-trip preserves vector", 
-          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
-    
-    // Generate random angles and vectors
-    auto yaw = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
-    auto pitch = GENERATE(take(10, random(-std::numbers::pi / 2.0 + 0.1, std::numbers::pi / 2.0 - 0.1)));
-    auto roll = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
-    
-    auto vx = GENERATE(take(10, random(-100.0, 100.0)));
-    auto vy = GENERATE(take(10, random(-100.0, 100.0)));
-    auto vz = GENERATE(take(10, random(-100.0, 100.0)));
-    
-    Vector3 v_enu(vx, vy, vz);
-    
-    SECTION("Transform ENU → body → ENU returns original vector") {
-        auto euler = EulerAngles::ZYX(yaw, pitch, roll);
-        Matrix3 dcm = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        // Transform ENU to body
-        Vector3 v_body = rotateVector(v_enu, dcm, CoordinateFrame::ENU, false);
-        
-        // Transform body back to ENU
-        Vector3 v_enu_roundtrip = rotateVector(v_body, dcm, CoordinateFrame::ENU, true);
-        
-        // Check that we got back the original vector
-        REQUIRE(v_enu_roundtrip.x() == Approx(v_enu.x()).margin(1e-10));
-        REQUIRE(v_enu_roundtrip.y() == Approx(v_enu.y()).margin(1e-10));
-        REQUIRE(v_enu_roundtrip.z() == Approx(v_enu.z()).margin(1e-10));
-        
-        // Check using norm
-        REQUIRE((v_enu_roundtrip - v_enu).norm() < 1e-10);
-    }
-}
-
-TEST_CASE("Property 6: Matrix multiplication round-trip R^T * R * v = v", 
-          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
-    
-    // Generate random angles and vectors
-    auto yaw = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
-    auto pitch = GENERATE(take(10, random(-std::numbers::pi / 2.0 + 0.1, std::numbers::pi / 2.0 - 0.1)));
-    auto roll = GENERATE(take(10, random(-std::numbers::pi, std::numbers::pi)));
-    
-    auto vx = GENERATE(take(10, random(-100.0, 100.0)));
-    auto vy = GENERATE(take(10, random(-100.0, 100.0)));
-    auto vz = GENERATE(take(10, random(-100.0, 100.0)));
-    
-    Vector3 v(vx, vy, vz);
-    
-    SECTION("R^T * (R * v) = v for ENU rotation matrix") {
-        auto euler = EulerAngles::ZYX(yaw, pitch, roll);
-        Matrix3 R = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        Vector3 v_rotated = R * v;
-        Vector3 v_roundtrip = R.transpose() * v_rotated;
-        
-        REQUIRE((v_roundtrip - v).norm() < 1e-10);
-    }
-}
-
-```
-
-
-### Файл: tests\unit\MathUtilities\interpolation_test.cpp
-```cpp
- #include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_approx.hpp>
-#include <catch2/generators/catch_generators.hpp>
-#include <catch2/generators/catch_generators_adapters.hpp>
-#include <catch2/generators/catch_generators_random.hpp>
-
-#include "../../../src/utils/Interpolation/ILinearInterpolator/LinearInterpolator/LinearInterpolator.h"
-#include <cmath>
-
-using namespace Catch;
-
-TEST_CASE("LinearInterpolator базовая функциональность", "[math][interpolation][linear]") {
-    using metricType = float;
-    
-    SECTION("Простая линейная интерполяция") {
-        std::vector<metricType> x_data = {0.0f, 1.0f, 2.0f, 3.0f};
-        std::vector<metricType> y_data = {0.0f, 2.0f, 4.0f, 6.0f};
-        
-        LinearInterpolator<metricType> interp(x_data, y_data);
-        
-        // Точки на узлах
-        REQUIRE(interp.interpolate(0.0f) == Approx(0.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(1.0f) == Approx(2.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(2.0f) == Approx(4.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(3.0f) == Approx(6.0f).margin(1e-6f));
-        
-        // Промежуточные точки
-        REQUIRE(interp.interpolate(0.5f) == Approx(1.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(1.5f) == Approx(3.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(2.5f) == Approx(5.0f).margin(1e-6f));
-    }
-    
-    SECTION("Интерполяция на неравномерной сетке") {
-        std::vector<metricType> x_data = {0.0f, 0.5f, 2.0f, 5.0f};
-        std::vector<metricType> y_data = {1.0f, 2.0f, 3.0f, 4.0f};
-        
-        LinearInterpolator<metricType> interp(x_data, y_data);
-        
-        // Проверяем узлы
-        REQUIRE(interp.interpolate(0.0f) == Approx(1.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(0.5f) == Approx(2.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(2.0f) == Approx(3.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(5.0f) == Approx(4.0f).margin(1e-6f));
-        
-        // Промежуточная точка в первом интервале [0, 0.5]
-        REQUIRE(interp.interpolate(0.25f) == Approx(1.5f).margin(1e-6f));
-        
-        // Промежуточная точка в третьем интервале [2, 5]
-        REQUIRE(interp.interpolate(3.5f) == Approx(3.5f).margin(1e-6f));
-    }
-    
-    SECTION("Точность интерполяции квадратичной функции") {
-        // Тестируем на квадратичной функции y = x^2
-        std::vector<metricType> x_data = {0.0f, 1.0f, 2.0f, 3.0f, 4.0f};
-        std::vector<metricType> y_data;
-        for (auto x : x_data) {
-            y_data.push_back(x * x);
-        }
-        
-        LinearInterpolator<metricType> interp(x_data, y_data);
-        
-        // Линейная интерполяция квадратичной функции не будет точной,
-        // но должна давать разумные приближения
-        metricType x_test = 1.5f;
-        metricType expected = x_test * x_test;  // 2.25
-        metricType interpolated = interp.interpolate(x_test);
-        
-        // Линейная интерполяция между (1,1) и (2,4) в точке 1.5 даст 2.5
-        REQUIRE(interpolated == Approx(2.5f).margin(1e-6f));
-        
-        // Ошибка интерполяции для квадратичной функции
-        metricType error = std::abs(interpolated - expected);
-        REQUIRE(error == Approx(0.25f).margin(1e-6f));  // |2.5 - 2.25| = 0.25
-    }
-}
-
-TEST_CASE("LinearInterpolator поведение экстраполяции", "[math][interpolation][extrapolation]") {
-    using metricType = float;
-    
-    std::vector<metricType> x_data = {1.0f, 2.0f, 3.0f};
-    std::vector<metricType> y_data = {10.0f, 20.0f, 30.0f};
-    
-    LinearInterpolator<metricType> interp(x_data, y_data);
-    
-    SECTION("Левая экстраполяция (константная)") {
-        // За пределами слева должно возвращать первое значение
-        REQUIRE(interp.interpolate(0.0f) == Approx(10.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(-5.0f) == Approx(10.0f).margin(1e-6f));
-    }
-    
-    SECTION("Правая экстраполяция (константная)") {
-        // За пределами справа должно возвращать последнее значение
-        REQUIRE(interp.interpolate(4.0f) == Approx(30.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(100.0f) == Approx(30.0f).margin(1e-6f));
-    }
-}
-
-TEST_CASE("LinearInterpolator граничные случаи и обработка ошибок", "[math][interpolation][edge][error]") {
-    using metricType = float;
-    
-    SECTION("Несовпадающие размеры массивов вызывают исключение") {
-        std::vector<metricType> x_data = {1.0f, 2.0f, 3.0f};
-        std::vector<metricType> y_data = {10.0f, 20.0f};  // Размер не совпадает
-        
-        REQUIRE_THROWS_AS(LinearInterpolator<metricType>(x_data, y_data), std::invalid_argument);
-    }
-    
-    SECTION("Пустые массивы вызывают исключение") {
-        std::vector<metricType> empty_x;
-        std::vector<metricType> empty_y;
-        
-        LinearInterpolator<metricType> interp(empty_x, empty_y);
-        REQUIRE_THROWS_AS(interp.interpolate(1.0f), std::runtime_error);
-    }
-    
-    SECTION("Интерполяция с одной точкой") {
-        std::vector<metricType> x_data = {5.0f};
-        std::vector<metricType> y_data = {25.0f};
-        
-        LinearInterpolator<metricType> interp(x_data, y_data);
-        
-        // Любая точка должна возвращать единственное значение
-        REQUIRE(interp.interpolate(0.0f) == Approx(25.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(5.0f) == Approx(25.0f).margin(1e-6f));
-        REQUIRE(interp.interpolate(10.0f) == Approx(25.0f).margin(1e-6f));
-    }
-    
-    SECTION("Обработка дублированных x значений") {
-        std::vector<metricType> x_data = {1.0f, 2.0f, 2.0f, 3.0f};  // Дублированное значение
-        std::vector<metricType> y_data = {10.0f, 20.0f, 25.0f, 30.0f};
-        
-        LinearInterpolator<metricType> interp(x_data, y_data);
-        
-        // Интерполятор должен работать, но поведение может быть неопределенным
-        // Проверяем, что он не падает
-        REQUIRE_NOTHROW(interp.interpolate(2.0f));
-        REQUIRE_NOTHROW(interp.interpolate(1.5f));
-        REQUIRE_NOTHROW(interp.interpolate(2.5f));
-    }
-}
-
-TEST_CASE("LinearInterpolator математические свойства", "[math][interpolation][properties]") {
-    using metricType = float;
-    
-    SECTION("Сохранение монотонности") {
-        // Монотонно возрастающие данные
-        std::vector<metricType> x_data = {0.0f, 1.0f, 2.0f, 3.0f, 4.0f};
-        std::vector<metricType> y_data = {1.0f, 3.0f, 5.0f, 7.0f, 9.0f};
-        
-        LinearInterpolator<metricType> interp(x_data, y_data);
-        
-        // Проверяем монотонность на промежуточных точках
-        metricType prev_value = interp.interpolate(0.0f);
-        for (metricType x = 0.1f; x <= 4.0f; x += 0.1f) {
-            metricType current_value = interp.interpolate(x);
-            REQUIRE(current_value >= prev_value);  // Должно быть неубывающим
-            prev_value = current_value;
-        }
-    }
-    
-    SECTION("Линейность в каждом сегменте") {
-        std::vector<metricType> x_data = {0.0f, 2.0f, 4.0f};
-        std::vector<metricType> y_data = {0.0f, 10.0f, 20.0f};
-        
-        LinearInterpolator<metricType> interp(x_data, y_data);
-        
-        // В каждом сегменте функция должна быть линейной
-        // Проверяем первый сегмент [0, 2]
-        metricType y_0_5 = interp.interpolate(0.5f);
-        metricType y_1_0 = interp.interpolate(1.0f);
-        metricType y_1_5 = interp.interpolate(1.5f);
-        
-        // Проверяем равномерность приращений
-        metricType delta1 = y_1_0 - y_0_5;
-        metricType delta2 = y_1_5 - y_1_0;
-        
-        REQUIRE(delta1 == Approx(delta2).margin(1e-6f));
-    }
-    
-    SECTION("Непрерывность в узлах") {
-        std::vector<metricType> x_data = {0.0f, 1.0f, 2.0f, 3.0f};
-        std::vector<metricType> y_data = {0.0f, 5.0f, 3.0f, 8.0f};
-        
-        LinearInterpolator<metricType> interp(x_data, y_data);
-        
-        // Проверяем непрерывность в узлах
-        metricType epsilon = 1e-6f;
-        
-        for (size_t i = 1; i < x_data.size() - 1; ++i) {
-            metricType x_node = x_data[i];
-            metricType left_limit = interp.interpolate(x_node - epsilon);
-            metricType right_limit = interp.interpolate(x_node + epsilon);
-            metricType node_value = interp.interpolate(x_node);
-            
-            REQUIRE(left_limit == Approx(node_value).margin(1e-4f));
-            REQUIRE(right_limit == Approx(node_value).margin(1e-4f));
-        }
-    }
-}
-```
-
-
-### Файл: tests\unit\MathUtilities\kinematic_state_enu_accessors_test.cpp
-```cpp
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_approx.hpp>
-#include <catch2/generators/catch_generators.hpp>
-#include <catch2/generators/catch_generators_random.hpp>
-
-#include "../../../src/utils/KinematicState/KinematicState.h"
-
-using namespace Catch;
-
-// Feature: coordinate-system-ned-to-enu, Property 5: Kinematic State Component Accessors
-// **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5**
-
-TEST_CASE("Property 5: KinematicState ENU position accessors return correct components", 
-          "[kinematic][property][enu][coordinate-system-ned-to-enu]") {
-    
-    // Generate random position values
-    auto east = GENERATE(take(10, random(-10000.0, 10000.0)));
-    auto north = GENERATE(take(10, random(-10000.0, 10000.0)));
-    auto altitude = GENERATE(take(10, random(-1000.0, 50000.0)));
-    
-    SECTION("Position accessors return correct ENU components") {
-        Eigen::Vector3d position(east, north, altitude);
-        
-        auto state = KinematicState<double>::createBuilder()
-            .setPosition(position)
-            .build();
-        
-        // Check ENU-specific accessors
-        REQUIRE(state.getEast() == Approx(east));
-        REQUIRE(state.getNorth() == Approx(north));
-        REQUIRE(state.getAltitude() == Approx(altitude));
-        
-        // Verify consistency with generic accessor
-        REQUIRE(state.getPosition().x() == Approx(east));
-        REQUIRE(state.getPosition().y() == Approx(north));
-        REQUIRE(state.getPosition().z() == Approx(altitude));
-    }
-}
-
-TEST_CASE("Property 5: KinematicState ENU velocity accessors return correct components", 
-          "[kinematic][property][enu][coordinate-system-ned-to-enu]") {
-    
-    // Generate random velocity values
-    auto ve = GENERATE(take(10, random(-1000.0, 1000.0)));
-    auto vn = GENERATE(take(10, random(-1000.0, 1000.0)));
-    auto vu = GENERATE(take(10, random(-1000.0, 1000.0)));
-    
-    SECTION("Velocity accessors return correct ENU components") {
-        Eigen::Vector3d velocity(ve, vn, vu);
-        
-        auto state = KinematicState<double>::createBuilder()
-            .setVelocity(velocity)
-            .build();
-        
-        // Check ENU-specific accessors
-        REQUIRE(state.getVelocityEast() == Approx(ve));
-        REQUIRE(state.getVelocityNorth() == Approx(vn));
-        REQUIRE(state.getVelocityUp() == Approx(vu));
-        
-        // Verify consistency with generic accessor
-        REQUIRE(state.getVelocity().x() == Approx(ve));
-        REQUIRE(state.getVelocity().y() == Approx(vn));
-        REQUIRE(state.getVelocity().z() == Approx(vu));
-    }
-}
-
-TEST_CASE("Property 5: KinematicState ENU accessors work with complete state", 
-          "[kinematic][property][enu][coordinate-system-ned-to-enu]") {
-    
-    // Generate random complete state
-    auto east = GENERATE(take(5, random(-10000.0, 10000.0)));
-    auto north = GENERATE(take(5, random(-10000.0, 10000.0)));
-    auto altitude = GENERATE(take(5, random(-1000.0, 50000.0)));
-    auto ve = GENERATE(take(5, random(-1000.0, 1000.0)));
-    auto vn = GENERATE(take(5, random(-1000.0, 1000.0)));
-    auto vu = GENERATE(take(5, random(-1000.0, 1000.0)));
-    
-    SECTION("All ENU accessors work correctly together") {
-        Eigen::Vector3d position(east, north, altitude);
-        Eigen::Vector3d velocity(ve, vn, vu);
-        Eigen::Vector3d euler(0.1, 0.2, 0.3);
-        Eigen::Vector3d omega(0.01, 0.02, 0.03);
-        
-        auto state = KinematicState<double>::createBuilder()
-            .setPosition(position)
-            .setVelocity(velocity)
-            .setEulerAngles(euler)
-            .setAngularVelocity(omega)
-            .build();
-        
-        // Check all ENU accessors
-        REQUIRE(state.getEast() == Approx(east));
-        REQUIRE(state.getNorth() == Approx(north));
-        REQUIRE(state.getAltitude() == Approx(altitude));
-        REQUIRE(state.getVelocityEast() == Approx(ve));
-        REQUIRE(state.getVelocityNorth() == Approx(vn));
-        REQUIRE(state.getVelocityUp() == Approx(vu));
-    }
-}
-
-TEST_CASE("Property 5: ENU accessors handle edge cases correctly", 
-          "[kinematic][property][enu][coordinate-system-ned-to-enu][edge]") {
-    
-    SECTION("Zero position and velocity") {
-        auto state = KinematicState<double>::createBuilder()
-            .setPosition(Eigen::Vector3d::Zero())
-            .setVelocity(Eigen::Vector3d::Zero())
-            .build();
-        
-        REQUIRE(state.getEast() == 0.0);
-        REQUIRE(state.getNorth() == 0.0);
-        REQUIRE(state.getAltitude() == 0.0);
-        REQUIRE(state.getVelocityEast() == 0.0);
-        REQUIRE(state.getVelocityNorth() == 0.0);
-        REQUIRE(state.getVelocityUp() == 0.0);
-    }
-    
-    SECTION("Negative altitude (below sea level)") {
-        Eigen::Vector3d position(100.0, 200.0, -50.0);
-        auto state = KinematicState<double>::createBuilder()
-            .setPosition(position)
-            .build();
-        
-        REQUIRE(state.getAltitude() == Approx(-50.0));
-    }
-    
-    SECTION("Large values") {
-        Eigen::Vector3d position(100000.0, 200000.0, 50000.0);
-        Eigen::Vector3d velocity(5000.0, 6000.0, 7000.0);
-        
-        auto state = KinematicState<double>::createBuilder()
-            .setPosition(position)
-            .setVelocity(velocity)
-            .build();
-        
-        REQUIRE(state.getEast() == Approx(100000.0));
-        REQUIRE(state.getNorth() == Approx(200000.0));
-        REQUIRE(state.getAltitude() == Approx(50000.0));
-        REQUIRE(state.getVelocityEast() == Approx(5000.0));
-        REQUIRE(state.getVelocityNorth() == Approx(6000.0));
-        REQUIRE(state.getVelocityUp() == Approx(7000.0));
-    }
-}
-
-```
-
-
-### Файл: tests\unit\MathUtilities\rotation_matrix_properties_test.cpp
-```cpp
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_approx.hpp>
-#include <catch2/generators/catch_generators.hpp>
-#include <catch2/generators/catch_generators_adapters.hpp>
-#include <catch2/generators/catch_generators_random.hpp>
-
-#include "../../../include/math/FlightMath.h"
-#include <cmath>
-#include <numbers>
-
-using namespace Catch;
-using namespace core::math;
-
-// Feature: coordinate-system-ned-to-enu, Property 1: Rotation Matrix Orthogonality and Determinant
-// **Validates: Requirements 1.1, 1.2, 1.3**
-
-/**
- * @brief Helper function to check if a matrix is orthogonal
- * 
- * A matrix R is orthogonal if R^T * R = I
- * 
- * @param R The rotation matrix to check
- * @param tolerance Numerical tolerance for comparison
- * @return true if the matrix is orthogonal within tolerance
- */
-bool isOrthogonal(const Matrix3& R, double tolerance = 1e-10) {
-    Matrix3 identity = R.transpose() * R;
-    Matrix3 expected = Matrix3::Identity();
-    return (identity - expected).norm() < tolerance;
-}
-
-/**
- * @brief Helper function to check if a matrix has determinant 1
- * 
- * A proper rotation matrix has determinant +1
- * 
- * @param R The rotation matrix to check
- * @param tolerance Numerical tolerance for comparison
- * @return true if the determinant is 1 within tolerance
- */
-bool hasUnitDeterminant(const Matrix3& R, double tolerance = 1e-10) {
-    return std::abs(R.determinant() - 1.0) < tolerance;
-}
-
-/**
- * @brief Helper function to check if a matrix is a proper rotation matrix
- * 
- * A proper rotation matrix must be orthogonal and have determinant 1
- * 
- * @param R The rotation matrix to check
- * @param tolerance Numerical tolerance for comparison
- * @return true if the matrix is a proper rotation matrix
- */
-bool isProperRotationMatrix(const Matrix3& R, double tolerance = 1e-10) {
-    return isOrthogonal(R, tolerance) && hasUnitDeterminant(R, tolerance);
-}
-
-TEST_CASE("Property 1: Rotation matrices Rx, Ry, Rz are orthogonal with determinant 1 in ENU", 
-          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
-    
-    // Generate 5 random angles in the range [-π, π]
-    auto angle = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
-    
-    SECTION("Rx rotation matrix in ENU satisfies orthogonality and determinant properties") {
-        // Create Euler angles with only roll component (rotation about X axis)
-        auto euler = EulerAngles::ZYX(0.0, 0.0, angle);
-        
-        // Get DCM in ENU coordinates
-        Matrix3 Rx_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        // Check orthogonality: R^T * R = I
-        REQUIRE(isOrthogonal(Rx_enu, 1e-10));
-        
-        // Check determinant: det(R) = 1
-        REQUIRE(hasUnitDeterminant(Rx_enu, 1e-10));
-        
-        // Combined check
-        REQUIRE(isProperRotationMatrix(Rx_enu, 1e-10));
-    }
-    
-    SECTION("Ry rotation matrix in ENU satisfies orthogonality and determinant properties") {
-        // Create Euler angles with only pitch component (rotation about Y axis)
-        auto euler = EulerAngles::ZYX(0.0, angle, 0.0);
-        
-        // Get DCM in ENU coordinates
-        Matrix3 Ry_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        // Check orthogonality: R^T * R = I
-        REQUIRE(isOrthogonal(Ry_enu, 1e-10));
-        
-        // Check determinant: det(R) = 1
-        REQUIRE(hasUnitDeterminant(Ry_enu, 1e-10));
-        
-        // Combined check
-        REQUIRE(isProperRotationMatrix(Ry_enu, 1e-10));
-    }
-    
-    SECTION("Rz rotation matrix in ENU satisfies orthogonality and determinant properties") {
-        // Create Euler angles with only yaw component (rotation about Z axis)
-        auto euler = EulerAngles::ZYX(angle, 0.0, 0.0);
-        
-        // Get DCM in ENU coordinates
-        Matrix3 Rz_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        // Check orthogonality: R^T * R = I
-        REQUIRE(isOrthogonal(Rz_enu, 1e-10));
-        
-        // Check determinant: det(R) = 1
-        REQUIRE(hasUnitDeterminant(Rz_enu, 1e-10));
-        
-        // Combined check
-        REQUIRE(isProperRotationMatrix(Rz_enu, 1e-10));
-    }
-}
-
-TEST_CASE("Property 1: Combined rotation matrices in ENU maintain orthogonality", 
-          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
-    
-    // Generate 5 random angle combinations
-    auto yaw = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
-    auto pitch = GENERATE(take(5, random(-std::numbers::pi / 2.0 + 0.1, std::numbers::pi / 2.0 - 0.1)));
-    auto roll = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
-    
-    SECTION("Combined rotation matrix Rz(yaw) * Ry(pitch) * Rx(roll) in ENU is orthogonal") {
-        // Create Euler angles with all three components
-        auto euler = EulerAngles::ZYX(yaw, pitch, roll);
-        
-        // Get DCM in ENU coordinates
-        Matrix3 R_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        // Check orthogonality: R^T * R = I
-        REQUIRE(isOrthogonal(R_enu, 1e-10));
-        
-        // Check determinant: det(R) = 1
-        REQUIRE(hasUnitDeterminant(R_enu, 1e-10));
-        
-        // Combined check
-        REQUIRE(isProperRotationMatrix(R_enu, 1e-10));
-    }
-}
-
-TEST_CASE("Property 1: Rotation matrices preserve vector magnitude in ENU", 
-          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
-    
-    // Generate random angles and vectors
-    auto angle = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
-    auto vx = GENERATE(take(5, random(-100.0, 100.0)));
-    auto vy = GENERATE(take(5, random(-100.0, 100.0)));
-    auto vz = GENERATE(take(5, random(-100.0, 100.0)));
-    
-    Vector3 v(vx, vy, vz);
-    double original_magnitude = v.norm();
-    
-    SECTION("Rx rotation preserves vector magnitude in ENU") {
-        auto euler = EulerAngles::ZYX(0.0, 0.0, angle);
-        Matrix3 Rx_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        Vector3 v_rotated = Rx_enu * v;
-        double rotated_magnitude = v_rotated.norm();
-        
-        REQUIRE(rotated_magnitude == Approx(original_magnitude).margin(1e-10));
-    }
-    
-    SECTION("Ry rotation preserves vector magnitude in ENU") {
-        auto euler = EulerAngles::ZYX(0.0, angle, 0.0);
-        Matrix3 Ry_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        Vector3 v_rotated = Ry_enu * v;
-        double rotated_magnitude = v_rotated.norm();
-        
-        REQUIRE(rotated_magnitude == Approx(original_magnitude).margin(1e-10));
-    }
-    
-    SECTION("Rz rotation preserves vector magnitude in ENU") {
-        auto euler = EulerAngles::ZYX(angle, 0.0, 0.0);
-        Matrix3 Rz_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        Vector3 v_rotated = Rz_enu * v;
-        double rotated_magnitude = v_rotated.norm();
-        
-        REQUIRE(rotated_magnitude == Approx(original_magnitude).margin(1e-10));
-    }
-}
-
-TEST_CASE("Property 1: Rotation matrix inverse equals transpose in ENU", 
-          "[math][rotation][property][enu][coordinate-system-ned-to-enu]") {
-    
-    // Generate random angles
-    auto yaw = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
-    auto pitch = GENERATE(take(5, random(-std::numbers::pi / 2.0 + 0.1, std::numbers::pi / 2.0 - 0.1)));
-    auto roll = GENERATE(take(5, random(-std::numbers::pi, std::numbers::pi)));
-    
-    SECTION("For orthogonal rotation matrix R in ENU: R^(-1) = R^T") {
-        auto euler = EulerAngles::ZYX(yaw, pitch, roll);
-        Matrix3 R_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        Matrix3 R_inverse = R_enu.inverse();
-        Matrix3 R_transpose = R_enu.transpose();
-        
-        // Check that inverse equals transpose
-        REQUIRE((R_inverse - R_transpose).norm() < 1e-10);
-        
-        // Verify that R * R^T = I
-        Matrix3 identity_check = R_enu * R_transpose;
-        REQUIRE((identity_check - Matrix3::Identity()).norm() < 1e-10);
-    }
-}
-
-TEST_CASE("Property 1: Edge cases for rotation matrices in ENU", 
-          "[math][rotation][property][enu][coordinate-system-ned-to-enu][edge]") {
-    
-    SECTION("Zero rotation produces identity matrix in ENU") {
-        auto euler = EulerAngles::ZYX(0.0, 0.0, 0.0);
-        Matrix3 R_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        REQUIRE((R_enu - Matrix3::Identity()).norm() < 1e-10);
-        REQUIRE(isProperRotationMatrix(R_enu, 1e-10));
-    }
-    
-    SECTION("180 degree rotation about X axis in ENU") {
-        auto euler = EulerAngles::ZYX(0.0, 0.0, std::numbers::pi);
-        Matrix3 Rx_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        REQUIRE(isProperRotationMatrix(Rx_enu, 1e-10));
-    }
-    
-    SECTION("180 degree rotation about Y axis in ENU") {
-        auto euler = EulerAngles::ZYX(0.0, std::numbers::pi, 0.0);
-        Matrix3 Ry_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        REQUIRE(isProperRotationMatrix(Ry_enu, 1e-10));
-    }
-    
-    SECTION("180 degree rotation about Z axis in ENU") {
-        auto euler = EulerAngles::ZYX(std::numbers::pi, 0.0, 0.0);
-        Matrix3 Rz_enu = eulerToDCM(euler, CoordinateFrame::ENU);
-        
-        REQUIRE(isProperRotationMatrix(Rz_enu, 1e-10));
-    }
-    
-    SECTION("90 degree rotations in ENU") {
-        double pi_2 = std::numbers::pi / 2.0;
-        
-        auto euler_x = EulerAngles::ZYX(0.0, 0.0, pi_2);
-        Matrix3 Rx_90_enu = eulerToDCM(euler_x, CoordinateFrame::ENU);
-        REQUIRE(isProperRotationMatrix(Rx_90_enu, 1e-10));
-        
-        auto euler_y = EulerAngles::ZYX(0.0, pi_2, 0.0);
-        Matrix3 Ry_90_enu = eulerToDCM(euler_y, CoordinateFrame::ENU);
-        REQUIRE(isProperRotationMatrix(Ry_90_enu, 1e-10));
-        
-        auto euler_z = EulerAngles::ZYX(pi_2, 0.0, 0.0);
-        Matrix3 Rz_90_enu = eulerToDCM(euler_z, CoordinateFrame::ENU);
-        REQUIRE(isProperRotationMatrix(Rz_90_enu, 1e-10));
-    }
-}
-
-```
-
-
-### Файл: tests\unit\MathUtilities\test_rotation_compile_check.cpp
-```cpp
-// Minimal compilation check for rotation matrix property test
-#include <catch2/catch_test_macros.hpp>
-#include "../../../include/math/FlightMath.h"
-
-TEST_CASE("Minimal rotation test", "[compile-check]") {
-    using namespace core::math;
-    
-    auto euler = EulerAngles::ZYX(0.0, 0.0, 0.0);
-    Matrix3 R = eulerToDCM(euler, CoordinateFrame::ENU);
-    
-    REQUIRE(R.determinant() > 0.0);
-}
-
-```
-
-
 ## Конфигурация
+
+
+### Файл: config\aerodynamics_rocket_1m.json
+```cpp
+{
+  "aircraft": {
+    "name": "Rocket 1m with 15cm fins",
+    "S_ref_global": 0.00785,
+    "c_ref_global": 1.0,
+    "b_ref_global": 0.15,
+    "components": [
+      {
+        "name": "body",
+        "type": "BODY",
+        "length": 1.0,
+        "diameter": 0.1,
+        "nose_type": "OGIVE",
+        "x_pos": 0.0,
+        "y_pos": 0.0,
+        "z_pos": 0.0,
+        "k_interference": 1.15,
+        "wake_shadow_factor": 0.3,
+        "hysteresis_tau": 0.2,
+        "vortex_gain": 0.1
+      },
+      {
+        "name": "fin_1",
+        "type": "FIN",
+        "S_ref": 0.0015,
+        "b_ref": 0.15,
+        "c_ref": 0.1,
+        "AR": 15.0,
+        "x_pos": 0.85,
+        "y_pos": 0.0,
+        "z_pos": 0.05,
+        "mount_angle": 0.0,
+        "can_deflect": true,
+        "delta": 0.0,
+        "k_interference": 1.2,
+        "wake_shadow_factor": 0.4,
+        "hysteresis_tau": 0.15,
+        "vortex_gain": 0.12
+      },
+      {
+        "name": "fin_2",
+        "type": "FIN",
+        "S_ref": 0.0015,
+        "b_ref": 0.15,
+        "c_ref": 0.1,
+        "AR": 15.0,
+        "x_pos": 0.85,
+        "y_pos": 0.0,
+        "z_pos": -0.05,
+        "mount_angle": 180.0,
+        "can_deflect": true,
+        "delta": 0.0,
+        "k_interference": 1.2,
+        "wake_shadow_factor": 0.4,
+        "hysteresis_tau": 0.15,
+        "vortex_gain": 0.12
+      },
+      {
+        "name": "fin_3",
+        "type": "FIN",
+        "S_ref": 0.0015,
+        "b_ref": 0.15,
+        "c_ref": 0.1,
+        "AR": 15.0,
+        "x_pos": 0.85,
+        "y_pos": 0.05,
+        "z_pos": 0.0,
+        "mount_angle": 90.0,
+        "can_deflect": true,
+        "delta": 0.0,
+        "k_interference": 1.2,
+        "wake_shadow_factor": 0.4,
+        "hysteresis_tau": 0.15,
+        "vortex_gain": 0.12
+      },
+      {
+        "name": "fin_4",
+        "type": "FIN",
+        "S_ref": 0.0015,
+        "b_ref": 0.15,
+        "c_ref": 0.1,
+        "AR": 15.0,
+        "x_pos": 0.85,
+        "y_pos": -0.05,
+        "z_pos": 0.0,
+        "mount_angle": 270.0,
+        "can_deflect": true,
+        "delta": 0.0,
+        "k_interference": 1.2,
+        "wake_shadow_factor": 0.4,
+        "hysteresis_tau": 0.15,
+        "vortex_gain": 0.12
+      }
+    ]
+  }
+}
+
+```
 
 
 ### Файл: config\simulation.json
@@ -6720,6 +4725,9 @@ TEST_CASE("Minimal rotation test", "[compile-check]") {
   "Ixx": "../data/input/dataTables/golubka_V1/Inertion/Ix_t.txt",
   "Iyy": "../data/input/dataTables/golubka_V1/Inertion/Iy_t.txt",
   "Izz": "../data/input/dataTables/golubka_V1/Inertion/Iz_t.txt",
+  "COM_x": "../data/input/dataTables/golubka_V1/COM/COM_x_t.txt",
+  "COM_y": "../data/input/dataTables/golubka_V1/COM/COM_y_t.txt",
+  "COM_z": "../data/input/dataTables/golubka_V1/COM/COM_z_t.txt",
 
   "position": [0.0, 0.0, 0.0],
   "velocity": [48.3, 0.0, 12.9],

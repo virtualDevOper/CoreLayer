@@ -89,6 +89,17 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                         .setInertia(new_state->getInertia())
                         .setTotalForce(new_state->getTotalForce())
                         .setTotalMoment(new_state->getTotalMoment())
+                        .setAeroCx(static_cast<metricType>(new_state->getAeroCx()))
+                        .setAeroCy(static_cast<metricType>(new_state->getAeroCy()))
+                        .setAeroCz(static_cast<metricType>(new_state->getAeroCz()))
+                        .setAeroMx(static_cast<metricType>(new_state->getAeroMx()))
+                        .setAeroMy(static_cast<metricType>(new_state->getAeroMy()))
+                        .setAeroMz(static_cast<metricType>(new_state->getAeroMz()))
+                        .setAeroAlpha(new_state->getAeroAlpha())
+                        .setAeroBeta(new_state->getAeroBeta())
+                        .setAeroMach(new_state->getAeroMach())
+                        .setAeroXcp(static_cast<metricType>(new_state->getAeroXcp()))
+                        .setAeroStaticMargin(static_cast<metricType>(new_state->getAeroStaticMargin()))
                         .buildUnique();
                     
                     // Обновляем состояние объекта для колбэков

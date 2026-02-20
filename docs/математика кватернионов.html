@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Преобразование векторов в динамике полета: NED, углы Эйлера, кватернионы</title>
+
+  <!-- Essential CDN Libraries -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              50: 'hsl(210, 75%, 95%)',
+              100: 'hsl(210, 75%, 85%)',
+              200: 'hsl(210, 75%, 75%)',
+              300: 'hsl(210, 75%, 65%)',
+              400: 'hsl(210, 75%, 55%)',
+              500: 'hsl(210, 75%, 40%)',
+              600: 'hsl(210, 75%, 35%)',
+              700: 'hsl(210, 75%, 25%)',
+              800: 'hsl(210, 75%, 15%)',
+              900: 'hsl(210, 75%, 10%)'
+            },
+            accent: {
+              50: 'hsl(240, 65%, 95%)',
+              100: 'hsl(240, 65%, 85%)',
+              200: 'hsl(240, 65%, 75%)',
+              300: 'hsl(240, 65%, 65%)',
+              400: 'hsl(240, 65%, 60%)',
+              500: 'hsl(240, 65%, 55%)',
+              600: 'hsl(240, 65%, 50%)',
+              700: 'hsl(240, 65%, 40%)',
+              800: 'hsl(240, 65%, 30%)',
+              900: 'hsl(240, 65%, 20%)'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+  <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+
+  <!-- Preline UI Components -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/preline@2.0.3/dist/preline.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/preline@2.0.3/dist/preline.js"></script>
+
+  <!-- Micro-interactions & Custom Styles -->
+  <style>
+    html { scroll-behavior: smooth; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+      html { scroll-behavior: auto; }
+    }
+
+    .btn-interactive {
+      transition: all 0.2s ease-out;
+    }
+    
+    .btn-interactive:hover {
+      transform: scale(1.05);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    }
+    
+    .btn-interactive:active {
+      transform: scale(0.95);
+    }
+
+    .card-interactive {
+      transition: all 0.3s ease-out;
+      border: 1px solid transparent;
+      --border-lightness: 40%;
+    }
+
+    .dark .card-interactive {
+      --border-lightness: 60%;
+    }
+
+    .card-interactive:hover {
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      filter: brightness(0.98);
+    }
+    
+    /* Primary colored cards */
+    .card-interactive[class*="primary"]:hover,
+    .card-interactive[class*="white"]:hover,
+    .card-interactive[class*="gray-"]:hover {
+      border-color: hsl(210, 75%, var(--border-lightness));
+    }
+    
+    /* Accent colored cards */
+    .card-interactive[class*="accent"]:hover {
+      border-color: hsl(240, 65%, var(--border-lightness));
+    }
+
+    .dark .card-interactive:hover {
+      filter: brightness(1.05);
+    }
+  </style>
+
+  <script>
+    function toggleDarkMode() {
+      document.body.classList.toggle('dark');
+      const isDark = document.body.classList.contains('dark');
+      document.getElementById('sunIcon').style.display = isDark ? 'block' : 'none';
+      document.getElementById('moonIcon').style.display = isDark ? 'none' : 'block';
+    }
+  </script>
+</head>
+
+<body class="transition-colors duration-300 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+  <!-- Citation System Script -->
+  <script>
+    function initCitationSystem() {
+      let i = 1, map = new Map();
+      document.querySelectorAll('[data-ref]').forEach(el => {
+        if (el.dataset.citationProcessed) return;
+        const raw = (el.getAttribute('data-ref')||'').trim();
+        if (!raw) return;
+
+        const parts = raw.split('|');
+        const url = parts[0].trim();
+        const idx = (parts[1]||'').trim() || map.get(raw) || (map.set(raw, String(i)), String(i++));
+
+        if (!el.textContent || !el.textContent.trim()) { el.dataset.citationProcessed = 'true'; return; }
+
+        const btn = document.createElement('sup'); btn.textContent = String(idx);
+        Object.assign(btn.style, { fontSize:'8px', color:'#fff', cursor:'pointer', top: '1px', fontWeight:'bold', backgroundColor:'#0284c7', borderRadius:'50%', transition:'all .15s', userSelect:'none', minWidth:'19px', height:'19px', marginLeft:'6px', display:'inline-flex', alignItems:'center', justifyContent:'center', boxShadow:'0 1px 3px rgba(0,0,0,.2)', lineHeight:'1'});
+        btn.addEventListener('mouseenter', ()=> Object.assign(btn.style, { backgroundColor:'#0369a1', transform:'scale(1.12)' }));
+        btn.addEventListener('mouseleave', ()=> Object.assign(btn.style, { backgroundColor:'#0284c7', transform:'scale(1)' }));
+        btn.addEventListener('click', e=>{ e.preventDefault(); e.stopPropagation(); window.open(url, '_blank'); });
+
+        el.appendChild(btn); el.dataset.citationProcessed = 'true';
+      });
+    }
+  </script>
+
+  <!-- Progress Bar -->
+  <div class="fixed top-0 left-0 h-1 bg-primary-500 dark:bg-primary-400 z-[60] transition-all duration-300 ease-out" id="progressBar" style="width: 0%;"></div>
+
+  <!-- Floating Header -->
+  <header class="fixed top-0 left-0 right-0 z-50 backdrop-blur bg-gray-50/90 dark:bg-gray-900/90 border-b border-primary-500/20 dark:border-primary-600/20" data-aos="fade-down">
+    <nav class="max-w-7xl mx-auto px-6 py-4">
+      <div class="flex items-center justify-between">
+        <h1 class="text-xl font-bold text-primary-700 dark:text-primary-300">Преобразование векторов в динамике полета</h1>
+        
+        <div class="flex items-center gap-6">
+          <a href="#home" class="btn-interactive text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 transition-colors">Главная</a>
+          <a href="#ned-system" class="btn-interactive text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 transition-colors">NED</a>
+          <a href="#euler-angles" class="btn-interactive text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 transition-colors">Эйлер</a>
+          <a href="#quaternions" class="btn-interactive text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 transition-colors">Кватернионы</a>
+          <a href="#direction-cosines" class="btn-interactive text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 transition-colors">Косинусы</a>
+          <a href="#kinematic-equations" class="btn-interactive text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 transition-colors">Кинематика</a>
+          <a href="#conclusion" class="btn-interactive text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 transition-colors">Заключение</a>
+          
+          <button onclick="toggleDarkMode()" class="btn-interactive p-2 rounded-lg bg-primary-100 dark:bg-primary-800 text-primary-600 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-700 transition-all">
+            <i data-lucide="sun" id="sunIcon" class="w-5 h-5" style="display: none;"></i>
+            <i data-lucide="moon" id="moonIcon" class="w-5 h-5" style="display: block;"></i>
+          </button>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Main Content -->
+  <main id="home" class="min-h-screen">
+    <!-- Hero Section -->
+    <section class="py-40 bg-primary-50/50 dark:bg-gray-900" data-aos="fade-up">
+      <div class="max-w-5xl mx-auto px-6">
+        <h2 class="text-4xl md:text-5xl font-bold mb-6 text-primary-700 dark:text-primary-300">
+          Математическое описание преобразования векторов между системами координат в динамике полета
+        </h2>
+        <p class="text-xl text-gray-700 dark:text-gray-300 mb-8 leading-relaxed">
+          Комплексное исследование методов преобразования векторов (скорости, ускорения, сил, моментов, угловой скорости) между связанной системой координат летательного аппарата и земной системой отсчёта NED (North-East-Down) с использованием различных параметризаций поворота: углов Эйлера, кватернионов и матриц направляющих косинусов.
+        </p>
+        
+        <div class="grid md:grid-cols-3 gap-6 mt-12">
+          <div class="card-interactive p-6 bg-white/90 backdrop-blur-sm dark:bg-gray-800 rounded-xl shadow-md">
+            <div class="flex items-center space-x-4 mb-4">
+              <div class="flex-shrink-0 w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center">
+                <i data-lucide="compass" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+              </div>
+              <h3 class="text-lg font-semibold text-primary-700 dark:text-primary-300">Система NED</h3>
+            </div>
+            <p class="text-sm text-gray-700 dark:text-gray-300">
+              Север-Восток-Вниз система координат для точного описания ориентации и движения ЛА
+            </p>
+          </div>
+
+          <div class="card-interactive p-6 bg-white/90 backdrop-blur-sm dark:bg-gray-800 rounded-xl shadow-md">
+            <div class="flex items-center space-x-4 mb-4">
+              <div class="flex-shrink-0 w-12 h-12 bg-accent-100 dark:bg-accent-900/30 rounded-lg flex items-center justify-center">
+                <i data-lucide="rotate-3d" class="w-6 h-6 text-accent-600 dark:text-accent-400"></i>
+              </div>
+              <h3 class="text-lg font-semibold text-accent-700 dark:text-accent-300">Углы Эйлера</h3>
+            </div>
+            <p class="text-sm text-gray-700 dark:text-gray-300">
+              Классический метод параметризации ориентации через три угла поворота
+            </p>
+          </div>
+
+          <div class="card-interactive p-6 bg-white/90 backdrop-blur-sm dark:bg-gray-800 rounded-xl shadow-md">
+            <div class="flex items-center space-x-4 mb-4">
+              <div class="flex-shrink-0 w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center">
+                <i data-lucide="octagon" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+              </div>
+              <h3 class="text-lg font-semibold text-primary-700 dark:text-primary-300">Кватернионы</h3>
+            </div>
+            <p class="text-sm text-gray-700 dark:text-gray-300">
+              Четырехпараметрическое представление вращения без сингулярностей
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- NED System Section -->
+    <section id="ned-system" class="py-20 bg-white/80 dark:bg-gray-900" data-aos="fade-up">
+      <div class="max-w-5xl mx-auto px-6">
+        <h2 class="text-3xl font-bold mb-8 text-primary-700 dark:text-primary-300">
+          Система координат NED (North-East-Down)
+        </h2>
+
+        <div class="grid md:grid-cols-2 gap-8 items-start mb-12">
+          <div class="space-y-6">
+            <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              Система координат NED (North-East-Down) представляет собой систему отсчета, где ось X указывает на север, ось Y указывает на восток, а ось Z направлена вниз. Эта система используется для описания положения и ориентации летательного аппарата относительно поверхности Земли.
+            </p>
+
+            <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              Ось X системы координат NED указывает на север, ось Y указывает на восток, а ось Z направлена вниз. Эта система координат является правосторонней и часто используется в авиационных и космических приложениях.
+            </p>
+
+            <div class="pl-4 pr-3 py-3 border-l-4 border-primary-500 bg-primary-50/40 dark:bg-primary-900/30 rounded-r-lg">
+              <p class="text-sm font-medium text-primary-900 dark:text-primary-100 leading-relaxed" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                <i data-lucide="info" class="inline-block w-4 h-4 mr-1.5 -mt-0.5"></i>
+                Ключевое преимущество: Система NED является правосторонней, что обеспечивает согласованность с традиционными навигационными конвенциями.
+              </p>
+            </div>
+          </div>
+
+          <img
+            src="https://cdn.qwenlm.ai/2474c0bf-705b-4dce-8239-127e2e6b7bee/0688b797-beab-4163-acfd-822310cc5322/4aac6886-934b-45c9-8d01-53b3013a163c.png?key=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyZXNvdXJjZV91c2VyX2lkIjoiMjQ3NGMwYmYtNzA1Yi00ZGNlLTgyMzktMTI3ZTJlNmI3YmVlIiwicmVzb3VyY2VfaWQiOiIwNjg4Yjc5Ny1iZWFiLTQxNjMtYWNmZC04MjIzMTBjYzUzMjIiLCJyZXNvdXJjZV9jaGF0X2lkIjpudWxsfQ.0hGZqqu5FSD02ACu5JKvWaqzLgTQJV5zWl860e_faK4"
+            alt="Схематичная трехмерная диаграмма системы координат NED с четко обозначенными осями: ось X (красная стрелка) направлена горизонтально вправо (на север), ось Y (зеленая стрелка) направлена горизонтально вверх (на восток), ось Z (синяя стрелка) направлена вертикально вниз. В центре системы расположена стилизованная модель самолета (серого цвета) с обозначенными собственными осями: продольная ось Xb (красная), поперечная ось Yb (зеленая), вертикальная ось Zb (синяя). На заднем плане изображена схематичная поверхность Земли (голубой градиент с зелеными пятнами суши). Все элементы выполнены в техническом стиле с четкими линиями и подписями осей белым шрифтом на черном фоне."
+            class="w-full rounded-xl shadow-lg hover:shadow-2xl transition-shadow duration-300"
+          />
+        </div>
+
+        <div class="space-y-6">
+          <h3 class="text-2xl font-semibold text-primary-700 dark:text-primary-300">
+            Преобразование между системами координат
+          </h3>
+
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Преобразование между системами координат включает преобразование положения, скорости и ускорения между различными системами координат. Это необходимо для интеграции данных от различных датчиков и навигационных систем.
+          </p>
+
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Преобразование векторов между системами координат может быть выполнено с использованием матриц направляющих косинусов или кватернионов. Эти методы позволяют точно описывать ориентацию и движение летательного аппарата.
+          </p>
+
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Матрица направляющих косинусов используется для преобразования векторов между системами координат. Она представляет собой ортогональную матрицу, которая описывает ориентацию одной системы координат относительно другой.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Euler Angles Section -->
+    <section id="euler-angles" class="py-20 bg-primary-50/50 dark:bg-gray-800" data-aos="fade-up">
+      <div class="max-w-5xl mx-auto px-6">
+        <h2 class="text-3xl font-bold mb-8 text-primary-700 dark:text-primary-300">
+          Углы Эйлера и их последовательности
+        </h2>
+
+        <div class="space-y-8">
+          <div class="card-interactive p-6 bg-white/90 backdrop-blur-sm dark:bg-gray-900 rounded-xl shadow-md">
+            <h3 class="text-xl font-semibold text-primary-700 dark:text-primary-300 mb-4" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              Последовательности углов Эйлера
+            </h3>
+            <p class="text-gray-700 dark:text-gray-300 mb-4">
+              Углы Эйлера могут быть определены различными способами, в зависимости от последовательности вращений. Общие последовательности включают ZYX, XYZ и ZYZ. Каждая последовательность имеет свои преимущества и недостатки.
+            </p>
+            <p class="text-gray-700 dark:text-gray-300">
+              Углы Эйлера ZYX используются в большинстве авиационных приложений. Они представляют собой последовательность вращений вокруг осей Z, Y и X, соответственно. Эта последовательность позволяет легко интерпретировать ориентацию летательного аппарата.
+            </p>
+          </div>
+
+          <div class="hs-accordion-group space-y-4">
+            <!-- ZYX Convention -->
+            <div class="hs-accordion card-interactive bg-white/80 backdrop-blur-sm dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+              <button class="hs-accordion-toggle w-full flex justify-between items-center p-4 text-left hover:bg-primary-50 dark:hover:bg-gray-700/50 transition-colors rounded-xl" id="hs-euler-zyx">
+                <div class="flex items-center space-x-4">
+                  <div class="flex-shrink-0 w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center">
+                    <i data-lucide="arrow-right" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                  </div>
+                  <span class="font-semibold text-lg text-primary-700 dark:text-primary-300">Последовательность ZYX</span>
+                </div>
+                <i data-lucide="chevron-down" class="hs-accordion-active:rotate-180 transition-transform duration-300 w-5 h-5 text-primary-600 dark:text-primary-400"></i>
+              </button>
+              <div id="hs-collapse-euler-zyx" class="hs-accordion-content hidden w-full overflow-hidden transition-[height] duration-300" aria-labelledby="hs-euler-zyx">
+                <div class="p-6 pt-0 space-y-4">
+                  <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                    Углы Эйлера ZYX используются в большинстве авиационных приложений. Они представляют собой последовательность вращений вокруг осей Z, Y и X, соответственно. Эта последовательность позволяет легко интерпретировать ориентацию летательного аппарата.
+                  </p>
+                  <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                    Для последовательности ZYX, углы Эйлера определяются как ψ (рыскание), θ (тангаж) и φ (крен). Эти углы описывают ориентацию летательного аппарата относительно системы координат NED.
+                  </p>
+                  <div class="pl-4 pr-3 py-3 border-l-4 border-primary-500 bg-primary-50/40 dark:bg-primary-900/30 rounded-r-lg">
+                    <p class="text-sm font-medium text-primary-900 dark:text-primary-100 leading-relaxed" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                      <i data-lucide="circle-check" class="inline-block w-4 h-4 mr-1.5 -mt-0.5"></i>
+                      Преимущество: ZYX последовательность широко используется в авиации благодаря своей интуитивной интерпретации.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- XYZ Convention -->
+            <div class="hs-accordion card-interactive bg-white/80 backdrop-blur-sm dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+              <button class="hs-accordion-toggle w-full flex justify-between items-center p-4 text-left hover:bg-primary-50 dark:hover:bg-gray-700/50 transition-colors rounded-xl" id="hs-euler-xyz">
+                <div class="flex items-center space-x-4">
+                  <div class="flex-shrink-0 w-12 h-12 bg-accent-100 dark:bg-accent-900/30 rounded-lg flex items-center justify-center">
+                    <i data-lucide="arrow-right" class="w-6 h-6 text-accent-600 dark:text-accent-400"></i>
+                  </div>
+                  <span class="font-semibold text-lg text-accent-700 dark:text-accent-300">Последовательность XYZ</span>
+                </div>
+                <i data-lucide="chevron-down" class="hs-accordion-active:rotate-180 transition-transform duration-300 w-5 h-5 text-accent-600 dark:text-accent-400"></i>
+              </button>
+              <div id="hs-collapse-euler-xyz" class="hs-accordion-content hidden w-full overflow-hidden transition-[height] duration-300" aria-labelledby="hs-euler-xyz">
+                <div class="p-6 pt-0 space-y-4">
+                  <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                    Углы Эйлера XYZ представляют собой последовательность вращений вокруг осей X, Y и Z. Эта последовательность менее распространена в авиации, но может быть полезна в некоторых специализированных приложениях.
+                  </p>
+                  <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                    Для последовательности XYZ, углы Эйлера определяются как φ (крен), θ (тангаж) и ψ (рыскание). Эти углы описывают ориентацию летательного аппарата относительно системы координат NED.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- ZYZ Convention -->
+            <div class="hs-accordion card-interactive bg-white/80 backdrop-blur-sm dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+              <button class="hs-accordion-toggle w-full flex justify-between items-center p-4 text-left hover:bg-primary-50 dark:hover:bg-gray-700/50 transition-colors rounded-xl" id="hs-euler-zyz">
+                <div class="flex items-center space-x-4">
+                  <div class="flex-shrink-0 w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center">
+                    <i data-lucide="arrow-right" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                  </div>
+                  <span class="font-semibold text-lg text-primary-700 dark:text-primary-300">Последовательность ZYZ</span>
+                </div>
+                <i data-lucide="chevron-down" class="hs-accordion-active:rotate-180 transition-transform duration-300 w-5 h-5 text-primary-600 dark:text-primary-400"></i>
+              </button>
+              <div id="hs-collapse-euler-zyz" class="hs-accordion-content hidden w-full overflow-hidden transition-[height] duration-300" aria-labelledby="hs-euler-zyz">
+                <div class="p-6 pt-0 space-y-4">
+                  <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                    Углы Эйлера ZYZ представляют собой последовательность вращений вокруг осей Z, Y и Z. Эта последовательность используется в некоторых специализированных приложениях, таких как космические аппараты.
+                  </p>
+                  <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                    Для последовательности ZYZ, углы Эйлера определяются как α, β и γ. Эти углы описывают ориентацию летательного аппарата относительно системы координат NED.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pl-4 pr-3 py-3 border-l-4 border-amber-500 bg-amber-50/40 dark:bg-amber-900/30 rounded-r-lg">
+            <p class="text-sm font-medium text-amber-900 dark:text-amber-100 leading-relaxed" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              <i data-lucide="alert-triangle" class="inline-block w-4 h-4 mr-1.5 -mt-0.5"></i>
+              Внимание: Выбор последовательности углов Эйлера зависит от конкретного приложения и требований к интерпретации ориентации.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quaternions Section -->
+    <section id="quaternions" class="py-20 bg-white/80 dark:bg-gray-900" data-aos="fade-up">
+      <div class="max-w-5xl mx-auto px-6">
+        <h2 class="text-3xl font-bold mb-8 text-primary-700 dark:text-primary-300">
+          Кватернионы для параметризации ориентации
+        </h2>
+
+        <div class="grid md:grid-cols-2 gap-8 items-start mb-12">
+          <img
+            src="https://cdn.qwenlm.ai/2474c0bf-705b-4dce-8239-127e2e6b7bee/0688b797-beab-4163-acfd-822310cc5322/3ffd7a68-f323-47b8-a5a1-ec334ceb13a0.png?key=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyZXNvdXJjZV91c2VyX2lkIjoiMjQ3NGMwYmYtNzA1Yi00ZGNlLTgyMzktMTI3ZTJlNmI3YmVlIiwicmVzb3VyY2VfaWQiOiIwNjg4Yjc5Ny1iZWFiLTQxNjMtYWNmZC04MjIzMTBjYzUzMjIiLCJyZXNvdXJjZV9jaGF0X2lkIjpudWxsfQ.0hGZqqu5FSD02ACu5JKvWaqzLgTQJV5zWl860e_faK4"
+            alt="Трехмерная схематичная иллюстрация кватерниона в пространстве: в центре композиции расположен единичный кватернион q = [q0, q1, q2, q3] с четырьмя компонентами, каждый представлен отдельной стрелкой разного цвета: скалярная часть q0 (белая стрелка, направленная вверх), векторная часть q1 (красная стрелка, направлена вправо), q2 (зеленая стрелка, направлена вверх-влево), q3 (синяя стрелка, направлена вниз-влево). Вокруг кватерниона показаны две системы координат: связанная система координат летательного аппарата (красная ось Xb, зеленая ось Yb, синяя ось Zb) и земная система NED (красная ось Xn, зеленая ось Yn, синяя ось Zn). Между системами проведена пунктирная линия с надписью 'q' на русском языке. Фон выполнен в нейтральных серых тонах с легким градиентом. Все элементы выполнены в техническом стиле с четкими линиями и подписями белым шрифтом."
+            class="w-full rounded-xl shadow-lg hover:shadow-2xl transition-shadow duration-300"
+          />
+
+          <div class="space-y-6">
+            <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              Кватернионы представляют собой альтернативный метод параметризации ориентации, который использует четыре параметра вместо трех углов Эйлера. Кватернионы обеспечивают более эффективное и стабильное представление ориентации, особенно в численных расчетах.
+            </p>
+
+            <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              Кватернион состоит из скалярной части и векторной части. Скалярная часть представляет собой косинус половины угла вращения, а векторная часть представляет собой ось вращения, умноженную на синус половины угла вращения.
+            </p>
+
+            <div class="pl-4 pr-3 py-3 border-l-4 border-primary-500 bg-primary-50/40 dark:bg-primary-900/30 rounded-r-lg">
+              <p class="text-sm font-medium text-primary-900 dark:text-primary-100 leading-relaxed" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                <i data-lucide="circle-check" class="inline-block w-4 h-4 mr-1.5 -mt-0.5"></i>
+                Преимущество: Кватернионы избегают проблемы сингулярностей, которые возникают при использовании углов Эйлера.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-6">
+          <h3 class="text-2xl font-semibold text-primary-700 dark:text-primary-300">
+            Преобразование между кватернионами и углами Эйлера
+          </h3>
+
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Преобразование между кватернионами и углами Эйлера может быть выполнено с использованием различных формул. Эти формулы позволяют легко переключаться между двумя методами параметризации ориентации.
+          </p>
+
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Преобразование кватерниона в углы Эйлера может быть выполнено с использованием следующих формул:
+          </p>
+
+          <div class="grid md:grid-cols-2 gap-6 mt-6">
+            <div class="card-interactive p-4 bg-accent-50/50 dark:bg-accent-900/20 rounded-lg">
+              <h4 class="text-sm font-semibold text-accent-700 dark:text-accent-300 mb-2">Преобразование кватернион → углы Эйлера</h4>
+              <div class="space-y-2 text-xs text-gray-700 dark:text-gray-300">
+                <p>φ = atan2(2(q₀q₁ + q₂q₃), 1 - 2(q₁² + q₂²))</p>
+                <p>θ = arcsin(2(q₀q₂ - q₃q₁))</p>
+                <p>ψ = atan2(2(q₀q₃ + q₁q₂), 1 - 2(q₂² + q₃²))</p>
+              </div>
+            </div>
+
+            <div class="card-interactive p-4 bg-primary-50/50 dark:bg-primary-900/20 rounded-lg">
+              <h4 class="text-sm font-semibold text-primary-700 dark:text-primary-300 mb-2">Преобразование углы Эйлера → кватернион</h4>
+              <div class="space-y-2 text-xs text-gray-700 dark:text-gray-300">
+                <p>q₀ = cos(φ/2)cos(θ/2)cos(ψ/2) + sin(φ/2)sin(θ/2)sin(ψ/2)</p>
+                <p>q₁ = sin(φ/2)cos(θ/2)cos(ψ/2) - cos(φ/2)sin(θ/2)sin(ψ/2)</p>
+                <p>q₂ = cos(φ/2)sin(θ/2)cos(ψ/2) + sin(φ/2)cos(θ/2)sin(ψ/2)</p>
+                <p>q₃ = cos(φ/2)cos(θ/2)sin(ψ/2) - sin(φ/2)sin(θ/2)cos(ψ/2)</p>
+              </div>
+            </div>
+          </div>
+
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Преобразование углов Эйлера в кватернион может быть выполнено с использованием следующих формул:
+          </p>
+
+          <div class="pl-4 pr-3 py-3 border-l-4 border-amber-500 bg-amber-50/40 dark:bg-amber-900/30 rounded-r-lg">
+            <p class="text-sm font-medium text-amber-900 dark:text-amber-100 leading-relaxed" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              <i data-lucide="info" class="inline-block w-4 h-4 mr-1.5 -mt-0.5"></i>
+              Важно: При преобразовании кватерниона в углы Эйлера необходимо учитывать диапазон значений, чтобы избежать ошибок округления.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Direction Cosines Section -->
+    <section id="direction-cosines" class="py-20 bg-accent-50/50 dark:bg-gray-800" data-aos="fade-up">
+      <div class="max-w-5xl mx-auto px-6">
+        <h2 class="text-3xl font-bold mb-8 text-accent-700 dark:text-accent-300">
+          Матрицы направляющих косинусов
+        </h2>
+
+        <div class="space-y-8">
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Матрица направляющих косинусов используется для преобразования векторов между системами координат. Она представляет собой ортогональную матрицу, которая описывает ориентацию одной системы координат относительно другой.
+          </p>
+
+          <div class="grid md:grid-cols-2 gap-8">
+            <div class="card-interactive p-6 bg-white/90 backdrop-blur-sm dark:bg-gray-900 rounded-xl shadow-md">
+              <h3 class="text-xl font-semibold text-accent-700 dark:text-accent-300 mb-4">
+                Определение матрицы направляющих косинусов
+              </h3>
+              <p class="text-gray-700 dark:text-gray-300 mb-4" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                Матрица направляющих косинусов C определяется как C = [cᵢⱼ], где cᵢⱼ — косинус угла между i-й осью первой системы координат и j-й осью второй системы координат.
+              </p>
+              <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                Матрица направляющих косинусов является ортогональной матрицей, что означает, что C⁻¹ = Cᵀ. Это свойство позволяет легко выполнять обратные преобразования между системами координат.
+              </p>
+            </div>
+
+            <div class="card-interactive p-6 bg-white/90 backdrop-blur-sm dark:bg-gray-900 rounded-xl shadow-md">
+              <h3 class="text-xl font-semibold text-accent-700 dark:text-accent-300 mb-4">
+                Свойства матрицы направляющих косинусов
+              </h3>
+              <p class="text-gray-700 dark:text-gray-300 mb-4" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                Матрица направляющих косинусов имеет следующие свойства:
+              </p>
+              <ul class="space-y-2 text-sm text-gray-700 dark:text-gray-300">
+                <li class="flex items-start">
+                  <i data-lucide="check" class="w-4 h-4 text-accent-600 dark:text-accent-400 mr-2 mt-0.5 flex-shrink-0"></i>
+                  <span>Ортогональность: C⁻¹ = Cᵀ</span>
+                </li>
+                <li class="flex items-start">
+                  <i data-lucide="check" class="w-4 h-4 text-accent-600 dark:text-accent-400 mr-2 mt-0.5 flex-shrink-0"></i>
+                  <span>Детерминант равен ±1</span>
+                </li>
+                <li class="flex items-start">
+                  <i data-lucide="check" class="w-4 h-4 text-accent-600 dark:text-accent-400 mr-2 mt-0.5 flex-shrink-0"></i>
+                  <span>Сохраняет длину векторов</span>
+                </li>
+                <li class="flex items-start">
+                  <i data-lucide="check" class="w-4 h-4 text-accent-600 dark:text-accent-400 mr-2 mt-0.5 flex-shrink-0"></i>
+                  <span>Сохраняет углы между векторами</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="card-interactive p-6 bg-white/90 backdrop-blur-sm dark:bg-gray-900 rounded-xl shadow-md">
+            <h3 class="text-xl font-semibold text-accent-700 dark:text-accent-300 mb-4">
+              Преобразование векторов с использованием матрицы направляющих косинусов
+            </h3>
+            <p class="text-gray-700 dark:text-gray-300 mb-4" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              Преобразование вектора v из системы координат A в систему координат B может быть выполнено с использованием матрицы направляющих косинусов C следующим образом:
+            </p>
+            <div class="bg-accent-100 dark:bg-accent-900/30 p-4 rounded-lg mb-4">
+              <p class="text-center text-lg font-mono text-accent-800 dark:text-accent-200">
+                vᴮ = Cᴬᴮ × vᴬ
+              </p>
+            </div>
+            <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              где vᴮ — вектор в системе координат B, vᴬ — вектор в системе координат A, а Cᴬᴮ — матрица направляющих косинусов, описывающая преобразование из системы A в систему B.
+            </p>
+          </div>
+
+          <div class="pl-4 pr-3 py-3 border-l-4 border-accent-500 bg-accent-50/40 dark:bg-accent-900/30 rounded-r-lg">
+            <p class="text-sm font-medium text-accent-900 dark:text-accent-100 leading-relaxed" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              <i data-lucide="info" class="inline-block w-4 h-4 mr-1.5 -mt-0.5"></i>
+              Применение: Матрицы направляющих косинусов широко используются в авиационных и космических системах для преобразования данных от различных датчиков и навигационных систем.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Kinematic Equations Section -->
+    <section id="kinematic-equations" class="py-20 bg-white/80 dark:bg-gray-900" data-aos="fade-up">
+      <div class="max-w-5xl mx-auto px-6">
+        <h2 class="text-3xl font-bold mb-8 text-primary-700 dark:text-primary-300">
+          Кинематические уравнения для производных ориентации
+        </h2>
+
+        <div class="space-y-8">
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Кинематические уравнения описывают изменение ориентации летательного аппарата во времени. Эти уравнения связывают угловую скорость с производными углов Эйлера или кватернионов.
+          </p>
+
+          <div class="grid md:grid-cols-2 gap-8 mb-12">
+            <div class="card-interactive p-6 bg-primary-50/50 dark:bg-gray-800 rounded-xl shadow-md">
+              <h3 class="text-xl font-semibold text-primary-700 dark:text-primary-300 mb-4">
+                Кинематические уравнения для углов Эйлера
+              </h3>
+              <p class="text-gray-700 dark:text-gray-300 mb-4" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                Кинематические уравнения для углов Эйлера связывают угловую скорость с производными углов Эйлера. Эти уравнения зависят от выбранной последовательности углов Эйлера.
+              </p>
+              <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                Для последовательности ZYX, кинематические уравнения имеют следующий вид:
+              </p>
+              <div class="bg-primary-100 dark:bg-primary-900/30 p-4 rounded-lg mt-4">
+                <div class="space-y-2 text-sm text-primary-900 dark:text-primary-100 font-mono">
+                  <p>φ̇ = p + (q sin φ + r cos φ) tan θ</p>
+                  <p>θ̇ = q cos φ - r sin φ</p>
+                  <p>ψ̇ = (q sin φ + r cos φ) sec θ</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-interactive p-6 bg-accent-50/50 dark:bg-gray-800 rounded-xl shadow-md">
+              <h3 class="text-xl font-semibold text-accent-700 dark:text-accent-300 mb-4">
+                Кинематические уравнения для кватернионов
+              </h3>
+              <p class="text-gray-700 dark:text-gray-300 mb-4" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                Кинематические уравнения для кватернионов описывают изменение кватерниона во времени под действием угловой скорости. Эти уравнения обеспечивают более стабильное численное решение по сравнению с углами Эйлера.
+              </p>
+              <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                Кинематическое уравнение для кватерниона имеет следующий вид:
+              </p>
+              <div class="bg-accent-100 dark:bg-accent-900/30 p-4 rounded-lg mt-4">
+                <div class="space-y-2 text-sm text-accent-900 dark:text-accent-100 font-mono">
+                  <p>q̇ = ½Ω(ω)q</p>
+                </div>
+              </div>
+              <p class="text-xs text-gray-700 dark:text-gray-300 mt-3" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+                где Ω(ω) — матрица угловой скорости, определенная как:
+              </p>
+              <div class="bg-accent-100 dark:bg-accent-900/30 p-3 rounded-lg mt-2">
+                <div class="text-xs text-accent-900 dark:text-accent-100 font-mono">
+                  <p>Ω(ω) = [0, -ωₓ, -ωᵧ, -ω_z]</p>
+                  <p>[ωₓ, 0, ω_z, -ωᵧ]</p>
+                  <p>[ωᵧ, -ω_z, 0, ωₓ]</p>
+                  <p>[ω_z, ωᵧ, -ωₓ, 0]</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pl-4 pr-3 py-3 border-l-4 border-amber-500 bg-amber-50/40 dark:bg-amber-900/30 rounded-r-lg">
+            <p class="text-sm font-medium text-amber-900 dark:text-amber-100 leading-relaxed" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              <i data-lucide="alert-triangle" class="inline-block w-4 h-4 mr-1.5 -mt-0.5"></i>
+              Внимание: Кинематические уравнения для углов Эйлера могут иметь сингулярности при определенных значениях углов (например, когда θ = ±90°), что делает их менее подходящими для численных расчетов.
+            </p>
+          </div>
+
+          <div class="card-interactive p-6 bg-white/90 backdrop-blur-sm dark:bg-gray-800 rounded-xl shadow-md">
+            <h3 class="text-xl font-semibold text-primary-700 dark:text-primary-300 mb-4">
+              Преобразование угловой скорости между системами координат
+            </h3>
+            <p class="text-gray-700 dark:text-gray-300 mb-4" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              Преобразование угловой скорости между системами координат может быть выполнено с использованием матрицы направляющих косинусов. Это необходимо для интеграции данных от различных датчиков и навигационных систем.
+            </p>
+            <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              Преобразование угловой скорости ω из системы координат A в систему координат B может быть выполнено следующим образом:
+            </p>
+            <div class="bg-primary-100 dark:bg-primary-900/30 p-4 rounded-lg mt-4">
+              <p class="text-center text-lg font-mono text-primary-800 dark:text-primary-200">
+                ωᴮ = Cᴬᴮ × ωᴬ
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Conclusion Section -->
+    <section id="conclusion" class="py-20 bg-primary-50/50 dark:bg-gray-800" data-aos="fade-up">
+      <div class="max-w-5xl mx-auto px-6">
+        <h2 class="text-3xl font-bold mb-8 text-primary-700 dark:text-primary-300">
+          Заключение
+        </h2>
+
+        <div class="space-y-6">
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Преобразование векторов между системами координат в динамике полета является важной задачей, которая требует точного и эффективного решения. Система координат NED предоставляет удобный способ описания положения и ориентации летательного аппарата относительно поверхности Земли.
+          </p>
+
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Углы Эйлера и кватернионы представляют собой два основных метода параметризации ориентации. Углы Эйлера предоставляют интуитивное понимание ориентации, но могут иметь сингулярности. Кватернионы обеспечивают более стабильное численное решение, но требуют дополнительных вычислений для интерпретации.
+          </p>
+
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Матрицы направляющих косинусов предоставляют универсальный способ преобразования векторов между системами координат. Они являются ортогональными матрицами, что позволяет легко выполнять обратные преобразования и сохранять длину и углы векторов.
+          </p>
+
+          <p class="text-gray-700 dark:text-gray-300" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+            Кинематические уравнения описывают изменение ориентации во времени и связывают угловую скорость с производными углов Эйлера или кватернионов. Эти уравнения являются основой для численного моделирования и управления ориентацией летательного аппарата.
+          </p>
+
+          <div class="pl-4 pr-3 py-3 border-l-4 border-primary-500 bg-primary-50/40 dark:bg-primary-900/30 rounded-r-lg">
+            <p class="text-sm font-medium text-primary-900 dark:text-primary-100 leading-relaxed" data-ref="https://www.researchgate.net/publication/325437964_Coordinate_Systems_and_Transformations|2">
+              <i data-lucide="circle-check" class="inline-block w-4 h-4 mr-1.5 -mt-0.5"></i>
+              Итог: Выбор метода параметризации ориентации зависит от конкретного приложения и требований к точности, стабильности и вычислительной эффективности.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-primary-900 dark:bg-gray-950 text-gray-300 py-12">
+    <div class="max-w-5xl mx-auto px-6">
+      <div class="grid md:grid-cols-3 gap-8 mb-8">
+        <div>
+          <h3 class="text-lg font-semibold text-primary-300 dark:text-primary-400 mb-4">О исследовании</h3>
+          <p class="text-sm text-gray-400">
+            Комплексное математическое описание преобразования векторов между системами координат в динамике полета с фокусом на NED-системе отсчёта.
+          </p>
+        </div>
+        <div>
+          <h3 class="text-lg font-semibold text-primary-300 dark:text-primary-400 mb-4">Ключевые темы</h3>
+          <ul class="text-sm text-gray-400 space-y-2">
+            <li>• Система координат NED</li>
+            <li>• Углы Эйлера различных последовательностей</li>
+            <li>• Кватернионы</li>
+            <li>• Матрицы направляющих косинусов</li>
+            <li>• Кинематические уравнения</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-lg font-semibold text-primary-300 dark:text-primary-400 mb-4">Источники</h3>
+          <p class="text-sm text-gray-400">
+            Исследование основано на авторитетных русскоязычных и зарубежных источниках по динамике полёта и теории ориентации.
+          </p>
+        </div>
+      </div>
+      <div class="border-t border-gray-700 pt-6 text-center">
+        <p class="text-sm text-gray-500">
+          © 2024 Исследование по преобразованию векторов в динамике полета. Все права защищены.
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Initialize Libraries -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Initialize Lucide icons
+      lucide.createIcons();
+
+      // Initialize AOS
+      AOS.init({
+        duration: 800,
+        once: true,
+        offset: 100
+      });
+
+      // Initialize Preline components
+      setTimeout(() => {
+        window.HSStaticMethods.autoInit();
+      }, 100);
+
+      // Progress bar functionality
+      const progressBar = document.getElementById('progressBar');
+      
+      window.addEventListener('scroll', () => {
+        const scrollTop = window.pageYOffset;
+        const docHeight = document.body.scrollHeight - window.innerHeight;
+        const scrollPercent = (scrollTop / docHeight) * 100;
+        progressBar.style.width = scrollPercent + '%';
+      });
+
+      // Initialize citation system
+      initCitationSystem();
+    });
+  </script>
+</body>
+</html>
+

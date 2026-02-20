@@ -34,6 +34,9 @@ struct SimulationConfig {
     std::string Ixx_path;
     std::string Iyy_path;
     std::string Izz_path;
+    std::string COM_x_path;
+    std::string COM_y_path;
+    std::string COM_z_path;
 
     SimulationConfigRocketInit rocket_init;
 

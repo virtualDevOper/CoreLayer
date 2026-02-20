@@ -3,6 +3,7 @@
 #include "../../../include/math/FlightMath.h"
 #include "../../utils/DynamicParametersProviderForFullRocketModel.h"
 #include "../../WorldModel/AbstractWorldModel.h"
+#include "../../../include/aero_simpi/aerodynamics.h"
 
 /**
  * CONVENTION (ENU - East-North-Up):
@@ -41,14 +42,21 @@ class FullRocketODE final : public IDynamicsSystem<metricType> {
 private:
     std::weak_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider_;
     std::weak_ptr<AbstractWorldModel<metricType>> world_;
+    std::shared_ptr<aero::AerodynamicsModel> aero_model_;
     // Cache last computed forces and moments for snapshot augmentation
     mutable Eigen::Vector3<metricType> last_computed_forces_;
     mutable Eigen::Vector3<metricType> last_computed_moments_;
+    // Cache last aerodynamic output for snapshot augmentation
+    mutable aero::AeroOutput last_aero_output_;
+    mutable metricType last_alpha_;
+    mutable metricType last_beta_;
+    mutable metricType last_mach_;
 
 public:
     explicit FullRocketODE(
         std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
-        std::shared_ptr<AbstractWorldModel<metricType>> world
+        std::shared_ptr<AbstractWorldModel<metricType>> world,
+        std::shared_ptr<aero::AerodynamicsModel> aero_model
     );
 
     std::string get_description() const override;
@@ -67,6 +75,7 @@ private:
 
     metricType computeSpaceAngleOfAttack(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeAerodynamicRollAngle(const Eigen::Vector3<metricType>& V_body) const;
+    metricType computeSideslipAngle(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeMachNumber(metricType V_magnitude, const Eigen::Vector3<metricType>& position) const;
     metricType computeAirDensity(const Eigen::Vector3<metricType>& position) const;
     
