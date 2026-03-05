@@ -4,7 +4,7 @@
 #pragma once
 #include "../../../../../AbstractObject.h"
 #include "../../../../../../utils/ObjInitParams.h"
-#include "../../../../../../utils/IParameterProvider.h"
+#include "../../../../../../utils/ParameterProvider/IParameterProvider.h"
 
 /**
 * \brief Класс реализации ЗУР_1_версия (MANPAD - Man-Portable Air-Defense System)

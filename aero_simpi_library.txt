@@ -1,6 +1,6 @@
 # Библиотека аэродинамики - aero_simpi
 # Полный исходный код модуля
-# Сгенерировано: 2026-03-04 15:43:37
+# Сгенерировано: 2026-03-05 12:37:03
 # ==========================================
 
 
@@ -1208,22 +1208,17 @@ public:
 ### Файл: include\aero_simpi\src\types.h
 ```cpp
 #pragma once
-
 #include <stdexcept>
 #include <string>
 #include <memory>
 #include <functional>
 #include <Eigen/Dense>
+#include <iostream>  // === FIX: Добавлено для std::cerr ===
 
 namespace aero {
-
 //==============================================================================
 // ИСКЛЮЧЕНИЯ
 //==============================================================================
-
-/**
- * @brief Базовое исключение для всех ошибок аэродинамической модели
- */
 class AeroException : public std::runtime_error {
 public:
     explicit AeroException(const std::string& message)
@@ -1231,27 +1226,18 @@ public:
     virtual ~AeroException() = default;
 };
 
-/**
- * @brief Исключение конфигурации (ошибки JSON, отсутствующие параметры)
- */
 class ConfigError : public AeroException {
 public:
     explicit ConfigError(const std::string& message)
         : AeroException("[ConfigError] " + message) {}
 };
 
-/**
- * @brief Исключение сингулярности (M=1, α=90°, V=0 и т.д.)
- */
 class SingularError : public AeroException {
 public:
     explicit SingularError(const std::string& message)
         : AeroException("[SingularError] " + message) {}
 };
 
-/**
- * @brief Исключение диапазона (параметры вне допустимых пределов)
- */
 class RangeError : public AeroException {
 public:
     explicit RangeError(const std::string& message)
@@ -1261,64 +1247,41 @@ public:
 //==============================================================================
 // ТИПЫ ДАННЫХ
 //==============================================================================
-
-/**
- * @brief Вектор 3D (используем Eigen для совместимости)
- */
 using Vector3d = Eigen::Vector3d;
 
-/**
- * @brief Типы аэродинамических компонентов
- */
 enum class ComponentType {
-    BODY,   // Тело вращения
-    WING,   // Крыло
-    FIN     // Руль/стабилизатор
+    BODY,
+    WING,
+    FIN
 };
 
-/**
- * @brief Типы формы носа
- */
 enum class NoseType {
-    SPHERE,  // Сферический
-    OGIVE,   // Оживальный
-    CONE     // Конический
+    SPHERE,
+    OGIVE,
+    CONE
 };
 
-/**
- * @brief Состояние аэродинамического расчёта
- */
 struct AeroState {
-    // Кинематика
-    double V{0.0};           // Скорость, м/с
-    double alpha{0.0};       // Угол атаки, градусы
-    double beta{0.0};        // Угол скольжения, градусы
-    double p{0.0};           // Угловая скорость крена, рад/с
-    double q{0.0};           // Угловая скорость тангажа, рад/с
-    double r{0.0};           // Угловая скорость рыскания, рад/с
-    
-    // Атмосфера
-    double rho{1.225};       // Плотность воздуха, кг/м³ (стандарт на уровне моря)
-    double M{0.0};           // Число Маха
-    double Re{1e6};          // Число Рейнольдса
-    
-    // Время
-    double dt{0.01};         // Шаг интегрирования, с
-    
-    // Геометрия (ЦМ)
-    double x_com{0.0};       // Координата ЦМ по X от носа, м
-    double y_com{0.0};       // Координата ЦМ по Y, м
-    double z_com{0.0};       // Координата ЦМ по Z, м
-    
-    // Предыдущее состояние (для гистерезиса)
-    double alpha_prev{0.0};  // Предыдущий угол атаки, градусы
-    double epsilon_prev{0.0}; // Предыдущий скос потока, радианы
-    
-    /**
-     * @brief Проверка валидности состояния
-     * @throws SingularError если V = 0 или rho = 0
-     * @throws RangeError если параметры вне допустимых пределов
-     */
+    double V{0.0};
+    double alpha{0.0};
+    double beta{0.0};
+    double p{0.0};
+    double q{0.0};
+    double r{0.0};
+
+    double rho{1.225};
+    double M{0.0};
+    double Re{1e6};
+
+    double dt{0.01};
+
+    double x_com{0.0};
+    double y_com{0.0};
+    double z_com{0.0};
+
+    double alpha_prev{0.0};
+    double epsilon_prev{0.0};
+
     void validate() const {
         if (V <= 0.0) {
             throw SingularError("The speed V must be > 0");
@@ -1329,35 +1292,36 @@ struct AeroState {
         if (M < 0.0 || M > 5.0) {
             throw RangeError("The Mach number must be in the range 0.0 ... 5.0 (current: " + std::to_string(M) + ")");
         }
-        // === ОТКЛЮЧЕНО: Разрешаем |α| > 90° для graceful degradation ===
-        // if (std::abs(alpha) > 90.0) {
-        //     throw RangeError("The angle of attack should be in the range of -90° ... +90°");
-        // }
-        // if (std::abs(beta) > 90.0) {
-        //     throw RangeError("The sliding angle should be in the range of -90° ... +90°");
-        // }
+
+        // === FIX: ОТКЛЮЧЕНО ИСКЛЮЧЕНИЕ ПРИ |α| > 90° ===
+        if (std::abs(alpha) > 90.0) {
+            std::cerr << "[AERO WARNING] |alpha| = " << std::abs(alpha)
+                      << "° exceeds 90° — using graceful degradation" << std::endl;
+        }
+        if (std::abs(beta) > 90.0) {
+            std::cerr << "[AERO WARNING] |beta| = " << std::abs(beta)
+                      << "° exceeds 90° — using graceful degradation" << std::endl;
+        }
+
+        if (std::abs(alpha) > 80.0) {
+            std::cerr << "[AERO DEBUG] High angle of attack: alpha = " << alpha
+                      << "°, model accuracy degraded" << std::endl;
+        }
     }
 };
 
-/**
- * @brief Результаты аэродинамического расчёта
- */
 struct AeroOutput {
-    // Идентификация компонента
-    std::string component_name{};      // Имя компонента
-    ComponentType component_type{ComponentType::BODY};  // Тип компонента
-    
-    // Основные коэффициенты (безразмерные)
-    double Cx{0.0};   // Лобовое сопротивление
-    double Cy{0.0};   // Боковая сила
-    double Cz{0.0};   // Нормальная сила (Z-UP: подъёмная = отрицательный)
-    
-    // Моменты (безразмерные)
-    double mx{0.0};   // Крен
-    double my{0.0};   // Тангаж (my > 0 = нос вверх)
-    double mz{0.0};   // Рыскание
-    
-    // Статические производные (1/рад)
+    std::string component_name{};
+    ComponentType component_type{ComponentType::BODY};
+
+    double Cx{0.0};
+    double Cy{0.0};
+    double Cz{0.0};
+
+    double mx{0.0};
+    double my{0.0};
+    double mz{0.0};
+
     double dCx_dalpha{0.0};
     double dCz_dalpha{0.0};
     double dmy_dalpha{0.0};
@@ -1365,66 +1329,45 @@ struct AeroOutput {
     double dmz_dbeta{0.0};
     double dCz_ddelta{0.0};
     double dmy_ddelta{0.0};
-    
-    // Динамические производные (1/(рад/с))
+
     double dCz_dq{0.0};
     double dmy_dq{0.0};
     double dCy_dr{0.0};
     double dmz_dr{0.0};
     double dmx_dp{0.0};
-    
-    // Диагностические флаги
+
     bool is_body_stalled{false};
     bool is_wing_stalled{false};
     bool is_transonic{false};
-    
-    // Геометрия
-    double x_cp{0.0};            // Центр давления, м (от носа)
-    double static_margin{0.0};   // (x_cp - x_com) / c_ref
-    
-    /**
-     * @brief Вычисление сил и моментов в абсолютных величинах
-     * @param S_ref Опорная площадь, м²
-     * @param c_ref Опорная длина, м
-     * @param b_ref Размах, м
-     * @return Pair<Сила, Момент> в Н и Н·м
-     */
+
+    double x_cp{0.0};
+    double static_margin{0.0};
+
     [[nodiscard]] std::pair<Vector3d, Vector3d> getForcesAndMoments(
         double S_ref, double c_ref, double b_ref, double V, double rho) const {
-        double q = 0.5 * rho * V * V;  // Скоростной напор, Па
-        
-        // Силы (Н)
-
-
+        double q = 0.5 * rho * V * V;
 
         Vector3d forces(
             Cx * q * S_ref,
             Cy * q * S_ref,
             Cz * q * S_ref
         );
-        
-        // Моменты (Н·м)
+
         Vector3d moments(
             mx * q * S_ref * b_ref,
             my * q * S_ref * c_ref,
             mz * q * S_ref * c_ref
         );
-        
+
         return {forces, moments};
     }
 };
 
-/**
- * @brief Глобальная конфигурация модели
- */
 struct GlobalConfig {
-    double S_ref{1.0};       // Опорная площадь, м²
-    double c_ref{1.0};       // Опорная длина (САХ), м
-    double b_ref{1.0};       // Размах крыла, м
-    
-    /**
-     * @brief Проверка валидности конфигурации
-     */
+    double S_ref{1.0};
+    double c_ref{1.0};
+    double b_ref{1.0};
+
     void validate() const {
         if (S_ref <= 0.0) {
             throw ConfigError("Опорная площадь S_ref должна быть > 0");
@@ -1438,9 +1381,6 @@ struct GlobalConfig {
     }
 };
 
-/**
- * @brief Парсер строки в NoseType
- */
 inline NoseType parseNoseType(const std::string& str) {
     if (str == "SPHERE" || str == "sphere") return NoseType::SPHERE;
     if (str == "OGIVE" || str == "ogive") return NoseType::OGIVE;
@@ -1448,9 +1388,6 @@ inline NoseType parseNoseType(const std::string& str) {
     throw ConfigError("Неизвестный тип носа: " + str);
 }
 
-/**
- * @brief Парсер строки в ComponentType
- */
 inline ComponentType parseComponentType(const std::string& str) {
     if (str == "BODY" || str == "body") return ComponentType::BODY;
     if (str == "WING" || str == "wing") return ComponentType::WING;
@@ -1459,7 +1396,6 @@ inline ComponentType parseComponentType(const std::string& str) {
 }
 
 } // namespace aero
-
 ```
 
 
@@ -1471,53 +1407,52 @@ inline ComponentType parseComponentType(const std::string& str) {
 #include "component.h"
 #include <cmath>
 #include <algorithm>
+#include <iostream>
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-namespace aero {
+// === FIX #9: Определяем M_PI_2 если не определён ===
+#ifndef M_PI_2
+#define M_PI_2 (M_PI / 2.0)
+#endif
 
-// Константа для защиты от деления на ноль в динамических производных
-constexpr double MIN_VELOCITY = 0.1;  // м/с, защита от деления на 0
+namespace aero {
+constexpr double MIN_VELOCITY = 0.1;
 
 //==============================================================================
 // BODY COMPONENT
 //==============================================================================
 BodyComponent::BodyComponent(const ComponentConfig& config)
-: AerodynamicComponent(config) {
+    : AerodynamicComponent(config) {
     if (config.type != ComponentType::BODY) {
         throw ConfigError("BodyComponent ensures COMPONENT::BODY type");
     }
 }
 
 AeroOutput BodyComponent::calculate(const AeroState& state,
-                                    const GlobalConfig& global) const {
+                                   const GlobalConfig& global) const {
     AeroOutput output;
 
-    // Заполняем идентификацию компонента
     output.component_name = config_.name;
     output.component_type = ComponentType::BODY;
 
-    // Конверсия углов в радианы
     const double alpha_rad = deg2rad(state.alpha);
     const double beta_rad  = deg2rad(state.beta);
     const double alpha_rad_abs = std::abs(alpha_rad);
 
-    // Базовые геометрические параметры
     const double diameter = config_.diameter;
     const double length   = config_.length;
     const double S_mid    = M_PI * diameter * diameter / 4.0;
     const double S_wetted = M_PI * diameter * length + S_mid;
 
-    // Коэффициент трения (Шлихтинг, турбулентный ПС)
     const double Re = std::max(state.Re, 1e4);
     const double logRe = std::log10(Re);
     const double Cf = 0.455 / std::pow(logRe, 2.58);
 
-    // Сопротивление трения
     output.Cx = Cf * S_wetted / global.S_ref;
 
-    // Базовое сопротивление формы (донное)
     double Cx_base = 0.0;
     switch (config_.nose_type) {
         case NoseType::SPHERE: Cx_base = 0.12; break;
@@ -1526,7 +1461,6 @@ AeroOutput BodyComponent::calculate(const AeroState& state,
     }
     output.Cx += Cx_base;
 
-    // Нормальная сила тела
     double k_normal = 0.0;
     switch (config_.nose_type) {
         case NoseType::SPHERE: k_normal = 6.0; break;
@@ -1534,152 +1468,111 @@ AeroOutput BodyComponent::calculate(const AeroState& state,
         case NoseType::CONE:   k_normal = 4.5; break;
     }
 
-    // Нелинейная поправка для больших углов
     const double f_nonlinear = std::max(0.0, 1.0 - 0.003 * std::abs(state.alpha));
-
-    // Нормальная сила (безразмерная)
     const double CN_body = k_normal * std::sin(alpha_rad) * f_nonlinear;
 
-    // Индуцированное сопротивление
     output.Cx += CN_body * std::sin(alpha_rad);
 
-    // Волновое сопротивление (M = 0 ... 5)
     double Cx_wave = 0.0;
     const double M = state.M;
     if (M >= 0.8 && M <= 1.2) {
-        // Трансзвук: плавная интерполяция
         const double t = (M - 0.8) / 0.4;
         const double sigmoid = 1.0 / (1.0 + std::exp(-10.0 * (t - 0.5)));
         const double supersonic_part = 0.1 * std::pow(M - 1.0, 2);
         Cx_wave = supersonic_part * sigmoid;
     }
     else if (M > 1.2) {
-        // Сверхзвук + гиперзвук
         const double t_c = diameter / length;
         Cx_wave = 4.0 * t_c * t_c / std::sqrt(std::max(M * M - 1.0, 0.01));
         if (M > 3.0) {
-            // Гиперзвук: поправка Ньютона
             const double newton_factor = 2.0 * std::sin(alpha_rad) * std::sin(alpha_rad);
             Cx_wave *= (1.0 + 0.5 * newton_factor);
         }
     }
     output.Cx += Cx_wave;
 
-    // === Z-UP: подъёмная сила вверх = отрицательный Cz ===
-    output.Cz = -CN_body * std::cos(alpha_rad);  // ← ИНВЕРСИЯ Z
-
-    // Cy (боковая сила от скольжения)
+    output.Cz = -CN_body * std::cos(alpha_rad);
     output.Cy = -k_normal * std::sin(beta_rad) * std::cos(beta_rad) * f_nonlinear;
 
-    // === ЦЕНТР ДАВЛЕНИЯ — ФИЗИЧЕСКИ КОРРЕКТНЫЙ РАСЧЁТ ===
-    // Базовое положение (60-70% длины от носа)
     double x_cp_base = 0.65 * length;
-    // Поправка на число Маха (ЦД смещается назад на сверхзвуке)
     double x_cp_mach = x_cp_base * (1.0 + 0.1 * std::max(0.0, M - 1.0));
 
-    // Экспериментальные данные: сдвиг ЦД ограничен ~15% длины
-    // Используем плавную функцию с насыщением
-    const double max_cp_shift_fraction = 0.15;  // Максимум 15% длины (эксперимент)
-    const double tau = 0.3;  // Постоянная насыщения, рад
+    const double max_cp_shift_fraction = 0.15;
+    const double tau = 0.3;
     const double shift_fraction = max_cp_shift_fraction * (1.0 - std::exp(-alpha_rad_abs / tau));
 
-    // ЦД смещается ВПЕРЁД (уменьшается x) при росте угла атаки
     output.x_cp = x_cp_mach * (1.0 - shift_fraction);
 
-    // === ФИЗИЧЕСКИЕ ГРАНИЦЫ ЦЕНТРА ДАВЛЕНИЯ ===
-    // ЦД не может быть ближе 10% длины к носу (там нет площади)
-    // ЦД не может быть дальше 95% длины (хвостовой срез)
     const double min_x_cp = 0.10 * length;
     const double max_x_cp = 0.95 * length;
     output.x_cp = std::clamp(output.x_cp, min_x_cp, max_x_cp);
 
-    // Плечо относительно ЦМ
     const double arm_x = output.x_cp - state.x_com;
 
-    // Моменты (Z-UP версия: двойная инверсия для сохранения «нос вверх»)
-    output.my = -output.Cz * arm_x / global.c_ref;  // ← ДВОЙНАЯ ИНВЕРСИЯ
+    output.my = -output.Cz * arm_x / global.c_ref;
     output.mz = -output.Cy * arm_x / global.c_ref;
     output.mx = 0.0;
 
-    // === СТАТИЧЕСКИЕ ПРОИЗВОДНЫЕ — ФИЗИЧЕСКИ КОРРЕКТНЫЕ ===
     const double dCN_dalpha = k_normal * (std::cos(alpha_rad) * f_nonlinear
         - std::sin(alpha_rad) * 0.003 * sign(state.alpha) * M_PI/180.0);
-
     output.dCx_dalpha = dCN_dalpha * std::sin(alpha_rad) + CN_body * std::cos(alpha_rad);
-    output.dCz_dalpha = -dCN_dalpha * std::cos(alpha_rad) + CN_body * std::sin(alpha_rad);  // ← ИНВЕРСИЯ
+    output.dCz_dalpha = -dCN_dalpha * std::cos(alpha_rad) + CN_body * std::sin(alpha_rad);
     output.dCy_dbeta = -k_normal * std::cos(2.0 * beta_rad);
 
-    // === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: производная x_cp по α ===
-    // x_cp = x_cp_mach * [1 - max_shift * (1 - exp(-|α|/τ))]
-    // dx_cp/dα = x_cp_mach * max_shift * exp(-|α|/τ) * (1/τ) * sign(α)
+    // === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: полная производная x_cp по α ===
     const double exp_term = std::exp(-alpha_rad_abs / tau);
-    const double dx_cp_dalpha = x_cp_mach
+    const double dx_cp_dalpha = -x_cp_mach
         * max_cp_shift_fraction
         * exp_term
         * (1.0 / tau)
-        * sign(state.alpha);  // sign в радианах
+        * sign(state.alpha);
 
-    // Производная момента: dmy/dα = -dCz/dα * arm/c - Cz * dx_cp/dα / c
+    // === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: полная производная момента ===
+    // dmy/dα = -dCz/dα * arm/c - Cz * dx_cp/dα / c
     output.dmy_dalpha = -output.dCz_dalpha * arm_x / global.c_ref
-                       - output.Cz * dx_cp_dalpha / global.c_ref;
+                       - output.Cz * dx_cp_dalpha / global.c_ref;  // ← ДОБАВЛЕНО ВТОРОЕ СЛАГАЕМОЕ!
 
     output.dmz_dbeta = -output.dCy_dbeta * arm_x / global.c_ref;
 
-    // === ФИЗИЧЕСКОЕ ОБЕСПЕЧЕНИЕ СТАТИЧЕСКОЙ УСТОЙЧИВОСТИ ===
-    // При больших |α| производная может инвертироваться из-за численных эффектов
-    // Гарантируем восстанавливающий характер момента через физическую модель
-    if (alpha_rad_abs > 0.1) {  // >5.7°
-        // Для статической устойчивости: dmy_dalpha и alpha должны иметь ПРОТИВОПОЛОЖНЫЕ знаки
-        const double expected_sign = -sign(state.alpha);  // Восстанавливающий момент
+    if (alpha_rad_abs > 0.1) {
+        const double expected_sign = -sign(state.alpha);
         if (output.dmy_dalpha * expected_sign < 0.0) {
-            // Если знак неверный — принудительно исправляем
             output.dmy_dalpha = expected_sign * std::max(std::abs(output.dmy_dalpha), 0.1);
         }
     }
 
-    // === ДИНАМИЧЕСКИЕ ПРОИЗВОДНЫЕ (ДЕМПФИРОВАНИЕ) ===
-    const double CL_alpha_body = k_normal * M_PI / 180.0;  // Приближённо, 1/рад
+    const double CL_alpha_body = k_normal * M_PI / 180.0;
 
-    // dCz/dq: демпфирование нормальной силы от угловой скорости тангажа
     output.dCz_dq = -CL_alpha_body * (arm_x / std::max(state.V, MIN_VELOCITY)) * 0.5;
 
-    // dmy/dq: демпфирование момента тангажа
-    // Основной вклад: от нормальной силы, вторичный: от трения
     const double damping_from_normal = -2.0 * dCN_dalpha * (arm_x / global.c_ref) * (arm_x / global.c_ref);
     const double damping_from_friction = -0.1 * (length / global.c_ref) * (length / global.c_ref);
     const double wetted_area = M_PI * diameter * length;
     const double viscous_damping = -Cf * wetted_area / global.S_ref * (length / global.c_ref);
-
     output.dmy_dq = damping_from_normal + damping_from_friction + viscous_damping * 0.1;
 
-    // dmx/dp: демпфирование крена (для осесимметричного тела — от трения)
-    output.dmx_dp = -Cf * wetted_area / global.S_ref * 0.05;  // Малый вклад
-
+    output.dmx_dp = -Cf * wetted_area / global.S_ref * 0.05;
     output.dCy_dr = CL_alpha_body * (arm_x / std::max(state.V, MIN_VELOCITY)) * 0.5;
     output.dmz_dr = -output.dCy_dr * arm_x / global.c_ref;
 
-    // === ПЛАВНОЕ ЗАТУХАНИЕ ПРИ |α| → 90° (вместо hard cutoff) ===
-    // Модель эмпирическая, валидна до ~85°. Приближение к 90° — экстраполяция.
+    // === FIX #10: M_PI_2 → M_PI / 2.0 ===
     const double alpha_deg_abs = std::abs(state.alpha);
     const double fade_alpha = (alpha_deg_abs > 80.0)
-        ? std::cos(std::min(1.0, (alpha_deg_abs - 80.0) / 10.0) * M_PI_2)
+        ? std::cos(std::min(1.0, (alpha_deg_abs - 80.0) / 10.0) * (M_PI / 2.0))
         : 1.0;
 
-    // Применяем fade к выходным коэффициентам
     output.Cz *= fade_alpha;
     output.Cy *= fade_alpha;
-    output.Cx = output.Cx * fade_alpha + (1.0 - fade_alpha) * 2.0;  // Cx → 2.0 при срыве
+    output.Cx = output.Cx * fade_alpha + (1.0 - fade_alpha) * 2.0;
     output.my *= fade_alpha;
     output.mz *= fade_alpha;
 
-    // Производные также затухают — модель теряет предсказательную силу
     output.dCz_dalpha *= fade_alpha;
     output.dmy_dalpha *= fade_alpha;
     output.dmy_dq *= fade_alpha;
     output.dmx_dp *= fade_alpha;
     output.dmz_dr *= fade_alpha;
 
-    // Диагностика
     output.is_body_stalled = (alpha_deg_abs > 30.0);
     output.is_transonic = (M >= 0.8 && M <= 1.2);
     output.static_margin = (output.x_cp - state.x_com) / global.c_ref;
@@ -1691,17 +1584,16 @@ AeroOutput BodyComponent::calculate(const AeroState& state,
 // WING COMPONENT
 //==============================================================================
 WingComponent::WingComponent(const ComponentConfig& config)
-: AerodynamicComponent(config) {
+    : AerodynamicComponent(config) {
     if (config.type != ComponentType::WING) {
         throw ConfigError("WingComponent ensure COMPONENT::WING type");
     }
 }
 
 AeroOutput WingComponent::calculate(const AeroState& state,
-                                    const GlobalConfig& global) const {
+                                   const GlobalConfig& global) const {
     AeroOutput output;
 
-    // Заполняем идентификацию компонента
     output.component_name = config_.name;
     output.component_type = ComponentType::WING;
 
@@ -1712,18 +1604,15 @@ AeroOutput WingComponent::calculate(const AeroState& state,
     const double Re = std::max(state.Re, 1e4);
     const double AR = config_.AR;
 
-    // Наклон кривой подъёмной силы (M = 0 ... 5)
     const double CL_alpha_2D = 2.0 * M_PI;
     double CL_alpha_3D = CL_alpha_2D / (1.0 + CL_alpha_2D / (M_PI * AR));
     double CL_alpha = 0.0;
 
     if (M < 0.8) {
-        // Дозвук: Прандтль-Глауэрт
         const double beta_PG = std::sqrt(std::max(1.0 - M * M, 0.01));
         CL_alpha = CL_alpha_3D / beta_PG;
     }
     else if (M <= 1.2) {
-        // Трансзвук: плавная интерполяция
         const double t = (M - 0.8) / 0.4;
         const double beta_PG = std::sqrt(std::max(1.0 - M * M, 0.01));
         const double subsonic = CL_alpha_3D / beta_PG;
@@ -1732,26 +1621,21 @@ AeroOutput WingComponent::calculate(const AeroState& state,
         CL_alpha = subsonic * (1.0 - sigmoid) + supersonic * sigmoid;
     }
     else {
-        // Сверхзвук
         CL_alpha = CL_alpha_3D / std::sqrt(std::max(M * M - 1.0, 0.01));
     }
 
-    // Гиперзвук: спад эффективности
     if (M > 3.0) {
         CL_alpha *= std::max(0.5, 1.0 - 0.1 * (M - 3.0));
     }
 
-    // Угол срыва с гистерезисом
     double alpha_stall_base = 12.0 + 2.0 * std::log10(Re / 1e6);
     alpha_stall_base = std::clamp(alpha_stall_base, 10.0, 16.0);
 
-    // Гистерезис (используем кэшированное значение)
     const double alpha_eff = state.alpha_prev * std::exp(-state.dt / config_.hysteresis_tau)
         + state.alpha * (1.0 - std::exp(-state.dt / config_.hysteresis_tau));
 
     output.is_wing_stalled = (std::abs(alpha_eff) > alpha_stall_base);
 
-    // Фактор срыва
     double stall_factor = 1.0;
     if (output.is_wing_stalled) {
         const double alpha_excess = std::abs(alpha_eff) - alpha_stall_base;
@@ -1765,10 +1649,8 @@ AeroOutput WingComponent::calculate(const AeroState& state,
         stall_factor = std::max(stall_factor, 0.4);
     }
 
-    // Подъёмная сила
     const double CL_wing = CL_alpha * alpha_rad * stall_factor * config_.k_interference;
 
-    // Вихревая подъёмная сила (большие α)
     double CL_vortex = 0.0;
     if (std::abs(state.alpha) > 15.0) {
         CL_vortex = config_.vortex_gain * std::sin(2.0 * alpha_rad)
@@ -1777,7 +1659,6 @@ AeroOutput WingComponent::calculate(const AeroState& state,
 
     const double CL_total = CL_wing + CL_vortex;
 
-    // Производная по α
     double dCL_dalpha = CL_alpha * stall_factor;
     if (std::abs(state.alpha) > 15.0) {
         dCL_dalpha += config_.vortex_gain * 2.0 * std::cos(2.0 * alpha_rad)
@@ -1786,21 +1667,15 @@ AeroOutput WingComponent::calculate(const AeroState& state,
             * sign(state.alpha) / 30.0 * M_PI/180.0;
     }
 
-    // === Z-UP: подъёмная сила вверх = отрицательный Cz ===
-    output.Cz = -CL_total * std::cos(alpha_rad);  // ← ИНВЕРСИЯ
-
-    // Производная
+    output.Cz = -CL_total * std::cos(alpha_rad);
     output.dCz_dalpha = -dCL_dalpha * std::cos(alpha_rad) + CL_total * std::sin(alpha_rad);
 
-    // Сопротивление крыла
     const double Cf = 0.455 / std::pow(std::log10(Re), 2.58);
-    output.Cx = Cf * 2.0;  // 2 поверхности
+    output.Cx = Cf * 2.0;
 
-    // Индуцированное сопротивление
     const double e_oswald = 0.85;
     output.Cx += CL_total * CL_total / (M_PI * AR * e_oswald);
 
-    // Волновое сопротивление
     if (M >= 0.7 && M <= 1.3) {
         output.Cx += 0.02 * std::exp(-std::pow((M - 0.95) / 0.15, 2));
     }
@@ -1812,29 +1687,22 @@ AeroOutput WingComponent::calculate(const AeroState& state,
         }
     }
 
-    // Дополнительное сопротивление от подъёмной силы
     output.Cx += CL_total * std::sin(alpha_rad);
 
-    // Боковая сила от скольжения
     output.Cy = -CL_alpha * beta_rad * stall_factor;
     output.dCy_dbeta = -CL_alpha * stall_factor;
 
-    // Центр давления (25% хорды)
     output.x_cp = config_.x_pos + 0.25 * config_.c_ref;
 
-    // Плечо
     const double arm_x = output.x_cp - state.x_com;
 
-    // Моменты (Z-UP версия)
     output.my = -output.Cz * arm_x / global.c_ref;
     output.mz = -output.Cy * arm_x / global.c_ref;
     output.mx = 0.0;
 
-    // Производные моментов
     output.dmy_dalpha = -output.dCz_dalpha * arm_x / global.c_ref;
     output.dmz_dbeta = -output.dCy_dbeta * arm_x / global.c_ref;
 
-    // === ФИЗИЧЕСКОЕ ОБЕСПЕЧЕНИЕ СТАТИЧЕСКОЙ УСТОЙЧИВОСТИ ===
     if (alpha_rad_abs > 0.1) {
         const double expected_sign = -sign(state.alpha);
         if (output.dmy_dalpha * expected_sign < 0.0) {
@@ -1842,18 +1710,17 @@ AeroOutput WingComponent::calculate(const AeroState& state,
         }
     }
 
-    // === ДИНАМИЧЕСКИЕ ПРОИЗВОДНЫЕ ===
     output.dCz_dq = -CL_alpha * (arm_x / std::max(state.V, MIN_VELOCITY)) * 0.5;
-    output.dmy_dq = output.dCz_dq * arm_x / global.c_ref;  // ← Знак: dmy_dq < 0 ✓
+    output.dmy_dq = output.dCz_dq * arm_x / global.c_ref;
     output.dmx_dp = -CL_alpha * config_.b_ref * config_.b_ref
         / (4.0 * std::max(state.V, MIN_VELOCITY) * global.b_ref) * 0.5;
     output.dCy_dr = CL_alpha * (arm_x / std::max(state.V, MIN_VELOCITY)) * 0.5;
     output.dmz_dr = -output.dCy_dr * arm_x / global.c_ref;
 
-    // === ПЛАВНОЕ ЗАТУХАНИЕ ПРИ |α| → 90° ===
+    // === FIX #11: M_PI_2 → M_PI / 2.0 ===
     const double alpha_deg_abs = std::abs(state.alpha);
     const double fade_alpha = (alpha_deg_abs > 80.0)
-        ? std::cos(std::min(1.0, (alpha_deg_abs - 80.0) / 10.0) * M_PI_2)
+        ? std::cos(std::min(1.0, (alpha_deg_abs - 80.0) / 10.0) * (M_PI / 2.0))
         : 1.0;
 
     output.Cz *= fade_alpha;
@@ -1867,7 +1734,6 @@ AeroOutput WingComponent::calculate(const AeroState& state,
     output.dmx_dp *= fade_alpha;
     output.dmz_dr *= fade_alpha;
 
-    // Диагностика
     output.is_transonic = (M >= 0.8 && M <= 1.2);
     output.static_margin = (output.x_cp - state.x_com) / global.c_ref;
 
@@ -1878,17 +1744,16 @@ AeroOutput WingComponent::calculate(const AeroState& state,
 // FIN COMPONENT
 //==============================================================================
 FinComponent::FinComponent(const ComponentConfig& config)
-: AerodynamicComponent(config) {
+    : AerodynamicComponent(config) {
     if (config.type != ComponentType::FIN) {
         throw ConfigError("FinComponent ensure COMPONENT::FIN type");
     }
 }
 
 AeroOutput FinComponent::calculate(const AeroState& state,
-                                   const GlobalConfig& global) const {
+                                  const GlobalConfig& global) const {
     AeroOutput output;
 
-    // Заполняем идентификацию компонента
     output.component_name = config_.name;
     output.component_type = ComponentType::FIN;
 
@@ -1899,7 +1764,6 @@ AeroOutput FinComponent::calculate(const AeroState& state,
     const double Re = std::max(state.Re, 1e4);
     const double AR = config_.AR;
 
-    // Наклон кривой подъёмной силы (аналогично крылу)
     const double CL_alpha_2D = 2.0 * M_PI;
     double CL_alpha_3D = CL_alpha_2D / (1.0 + CL_alpha_2D / (M_PI * AR));
     double CL_alpha = 0.0;
@@ -1924,7 +1788,6 @@ AeroOutput FinComponent::calculate(const AeroState& state,
         CL_alpha *= std::max(0.5, 1.0 - 0.1 * (M - 3.0));
     }
 
-    // Угол срыва
     double alpha_stall_base = 12.0 + 2.0 * std::log10(Re / 1e6);
     alpha_stall_base = std::clamp(alpha_stall_base, 10.0, 16.0);
 
@@ -1939,7 +1802,6 @@ AeroOutput FinComponent::calculate(const AeroState& state,
         stall_factor = std::max(0.4, 1.0 - 0.02 * std::min(alpha_excess, 30.0));
     }
 
-    // Эффективность руля
     double eta_base = 0.7;
     double eta_mach = 1.0;
     if (M >= 0.7 && M < 1.3) {
@@ -1953,41 +1815,32 @@ AeroOutput FinComponent::calculate(const AeroState& state,
     const double eta_alpha = 1.0 - 0.5 * std::sin(alpha_rad) * std::sin(alpha_rad);
     const double eta = eta_base * eta_mach * eta_alpha;
 
-    // Скос потока (downwash)
     const double epsilon_eff = state.epsilon_prev * std::exp(-state.dt / 0.1)
         + 0.3 * (-state.alpha * M_PI / 180.0) * (1.0 - std::exp(-state.dt / 0.1));
 
-    // Эффективный угол атаки на руле
     const double alpha_fin_eff = alpha_rad - epsilon_eff;
 
-    // Подъёмная сила руля
     const double CL_fin = CL_alpha * (alpha_fin_eff + delta_rad) * stall_factor * eta;
 
-    // Проекция на глобальные оси (с учётом mount_angle)
     output.Cz = -CL_fin * std::cos(mount_angle_rad) * config_.S_ref / global.S_ref;
     output.Cy = -CL_fin * std::sin(mount_angle_rad) * config_.S_ref / global.S_ref;
 
-    // Производные
     const double dCL_ddelta = CL_alpha * eta * stall_factor;
     output.dCz_ddelta = -dCL_ddelta * std::cos(mount_angle_rad) * config_.S_ref / global.S_ref;
     output.dmy_ddelta = -output.dCz_ddelta * (config_.x_pos - state.x_com) / global.c_ref;
 
-    // Сопротивление
     const double Cf = 0.455 / std::pow(std::log10(Re), 2.58);
     output.Cx = Cf * 2.0 + CL_fin * CL_fin / (M_PI * AR * 0.85);
 
-    // Моменты
     const double arm_x = config_.x_pos - state.x_com;
     output.my = -output.Cz * arm_x / global.c_ref;
     output.mz = -output.Cy * arm_x / global.c_ref;
     output.mx = (output.Cz * config_.y_pos - output.Cy * config_.z_pos) * arm_x / global.b_ref;
 
-    // Производные по α
     output.dCz_dalpha = -CL_alpha * stall_factor * eta * std::cos(mount_angle_rad)
         * config_.S_ref / global.S_ref;
     output.dmy_dalpha = -output.dCz_dalpha * arm_x / global.c_ref;
 
-    // === ФИЗИЧЕСКОЕ ОБЕСПЕЧЕНИЕ СТАТИЧЕСКОЙ УСТОЙЧИВОСТИ ===
     const double alpha_rad_abs = std::abs(alpha_rad);
     if (alpha_rad_abs > 0.1) {
         const double expected_sign = -sign(state.alpha);
@@ -1996,28 +1849,24 @@ AeroOutput FinComponent::calculate(const AeroState& state,
         }
     }
 
-    // === ДИНАМИЧЕСКИЕ ПРОИЗВОДНЫЕ С ПРОЕКЦИЕЙ ЧЕРЕЗ mount_angle ===
     const double damping_base = -2.0 * CL_alpha * stall_factor * eta
         * (arm_x / std::max(state.V, MIN_VELOCITY)) * 0.5
         * (arm_x / global.c_ref) * config_.S_ref / global.S_ref;
 
-    // Проекция демпфирования на оси Y (тангаж) и Z (рыскание) через mount_angle
     output.dmy_dq = damping_base * std::cos(mount_angle_rad);
     output.dmz_dr = damping_base * std::sin(mount_angle_rad);
 
-    // Демпфирование крена: через плечо roll_arm
     const double roll_arm = std::sqrt(config_.y_pos * config_.y_pos + config_.z_pos * config_.z_pos);
     output.dmx_dp = -CL_alpha * stall_factor * eta
         * (roll_arm / std::max(state.V, MIN_VELOCITY)) * 0.5
         * (roll_arm / global.b_ref) * config_.S_ref / global.S_ref;
-
     output.dCy_dr = CL_alpha * (arm_x / std::max(state.V, MIN_VELOCITY)) * 0.5
         * std::sin(mount_angle_rad) * config_.S_ref / global.S_ref;
 
-    // === ПЛАВНОЕ ЗАТУХАНИЕ ПРИ |α| → 90° ===
+    // === FIX #12: M_PI_2 → M_PI / 2.0 ===
     const double alpha_deg_abs = std::abs(state.alpha);
     const double fade_alpha = (alpha_deg_abs > 80.0)
-        ? std::cos(std::min(1.0, (alpha_deg_abs - 80.0) / 10.0) * M_PI_2)
+        ? std::cos(std::min(1.0, (alpha_deg_abs - 80.0) / 10.0) * (M_PI / 2.0))
         : 1.0;
 
     output.Cz *= fade_alpha;
@@ -2030,9 +1879,8 @@ AeroOutput FinComponent::calculate(const AeroState& state,
     output.dmz_dr *= fade_alpha;
     output.dmx_dp *= fade_alpha;
 
-    // Диагностика
     output.is_transonic = (M >= 0.8 && M <= 1.2);
-    output.x_cp = config_.x_pos + 0.25 * config_.c_ref;  // Аэродинамический центр профиля
+    output.x_cp = config_.x_pos + 0.25 * config_.c_ref;
     output.static_margin = (output.x_cp - state.x_com) / global.c_ref;
 
     return output;
@@ -2063,22 +1911,19 @@ std::shared_ptr<IAerodynamicComponent> ComponentFactory::create(const ComponentC
 #include "model.h"
 #include <cmath>
 #include <algorithm>
+#include <iostream>  // === FIX: Добавлено для std::cerr ===
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
 namespace aero {
-
 //==============================================================================
 // AERODYNAMICS MODEL
 //==============================================================================
-
 AerodynamicsModel::AerodynamicsModel(const AeroConfig& config) : config_(config) {
-    // Валидация конфигурации
     config_.validate();
-    
-    // Создание компонентов через фабрику
+
     components_.reserve(config_.components.size());
     for (const auto& comp_config : config_.components) {
         components_.push_back(ComponentFactory::create(comp_config));
@@ -2095,70 +1940,50 @@ std::shared_ptr<AerodynamicsModel> AerodynamicsModel::createFromFile(const std::
 }
 
 AeroOutput AerodynamicsModel::calculate(const AeroState& state) const {
-    // Валидация состояния
     state.validate();
-    
-    // Создаём локальную копию state для передачи в компоненты с историей гистерезиса
+
     AeroState state_with_history = state;
-    state_with_history.alpha_prev = alpha_prev_;      // ← из кэша модели
-    state_with_history.epsilon_prev = epsilon_prev_;  // ← из кэша модели
-    
-    // Расчёт весов по Маху
+    state_with_history.alpha_prev = alpha_prev_;
+    state_with_history.epsilon_prev = epsilon_prev_;
+
     const auto weights = calculateMachWeights(state.M);
-    
-    // Расчёт каждого компонента (они читают state_with_history.alpha_prev)
+
     std::vector<AeroOutput> outputs;
     outputs.reserve(components_.size());
     for (const auto& component : components_) {
         outputs.push_back(component->calculate(state_with_history, config_.global));
     }
-    
-    // Применение интерференции
+
     applyInterference(outputs, state);
-    
-    // Гибридное суммирование
+
     AeroOutput result = sumComponents(outputs, state);
-    
-    // Обновление кэша для следующего шага
-    // ВАЖНО: Обновляем ПОСЛЕ расчёта, чтобы текущий шаг использовал предыдущие значения
+
     alpha_prev_ = state.alpha;
     epsilon_prev_ = calculateEpsilonFromOutputs(outputs, state);
-    
+
     return result;
 }
 
 AerodynamicsModel::MachWeights AerodynamicsModel::calculateMachWeights(double M) const {
     MachWeights weights;
-    
-    // Сигмоидальные веса для плавной интерполяции
-    // Дозвук: M < 0.85
+
     weights.sub = 1.0 / (1.0 + std::exp((M - 0.85) / 0.05));
-    
-    // Сверхзвук: M > 0.95
     weights.sup = 1.0 / (1.0 + std::exp((0.95 - M) / 0.05));
-    
-    // Гиперзвук: M > 3.0
     weights.hyper = 1.0 / (1.0 + std::exp((3.0 - M) / 0.2));
-    
-    // Нормализация (опционально, для гарантии sum = 1 в переходных зонах)
-    // В данной реализации веса могут суммироваться > 1 в переходных зонах,
-    // что допустимо для плавной интерполяции
-    
+
     return weights;
 }
 
 void AerodynamicsModel::applyInterference(std::vector<AeroOutput>& outputs, const AeroState& state) const {
-    // Поиск индексов компонентов по типу
     int wing_index = -1;
     int fin_index = -1;
     double diameter_fuselage = 0.0;
     double b_wing = 1.0;
-    
+
     for (size_t i = 0; i < outputs.size(); ++i) {
         const auto& comp = components_[i];
         if (comp->getType() == ComponentType::WING) {
             wing_index = static_cast<int>(i);
-            // Находим размах крыла из конфигурации
             for (const auto& cfg : config_.components) {
                 if (cfg.name == comp->getName()) {
                     b_wing = cfg.b_ref;
@@ -2170,7 +1995,6 @@ void AerodynamicsModel::applyInterference(std::vector<AeroOutput>& outputs, cons
             fin_index = static_cast<int>(i);
         }
         else if (comp->getType() == ComponentType::BODY) {
-            // Находим диаметр фюзеляжа из конфигурации
             for (const auto& cfg : config_.components) {
                 if (cfg.name == comp->getName()) {
                     diameter_fuselage = cfg.diameter;
@@ -2179,20 +2003,17 @@ void AerodynamicsModel::applyInterference(std::vector<AeroOutput>& outputs, cons
             }
         }
     }
-    
-    // Интерференция крыло-фюзеляж
+
     if (wing_index >= 0 && diameter_fuselage > 0.0) {
         const double k_wf = 1.0 + 0.15 * std::pow(diameter_fuselage / b_wing, 2);
         outputs[wing_index].Cz *= k_wf;
         outputs[wing_index].dCz_dalpha *= k_wf;
     }
-    
-    // След за крылом (экранирование ГО)
+
     if (wing_index >= 0 && fin_index >= 0) {
         const double alpha_rad = state.alpha * M_PI / 180.0;
         const double CL_wing_norm = -outputs[wing_index].Cz / std::cos(alpha_rad);
-        
-        // Находим wake_shadow_factor из конфигурации
+
         double wake_factor = 0.3;
         for (const auto& cfg : config_.components) {
             if (cfg.type == ComponentType::WING) {
@@ -2200,10 +2021,10 @@ void AerodynamicsModel::applyInterference(std::vector<AeroOutput>& outputs, cons
                 break;
             }
         }
-        
+
         double q_ratio = 1.0 - wake_factor * CL_wing_norm * CL_wing_norm;
-        q_ratio = std::max(q_ratio, 0.5);  // Минимум 50% напора
-        
+        q_ratio = std::max(q_ratio, 0.5);
+
         outputs[fin_index].Cz *= q_ratio;
         outputs[fin_index].dCz_dalpha *= q_ratio;
     }
@@ -2212,44 +2033,16 @@ void AerodynamicsModel::applyInterference(std::vector<AeroOutput>& outputs, cons
 AeroOutput AerodynamicsModel::sumComponents(const std::vector<AeroOutput>& outputs,
                                            const AeroState& state) const {
     AeroOutput result;
-    
-    // Веса по типу компонента
-    double w_body = 1.0;
-    double w_wing = 1.0;
-    double w_fin = 1.0;
-    
-    // Вес крыла падает при больших α и малых M для ракет
-    if (std::abs(state.alpha) > 20.0) {
-        w_wing *= 0.5;
-    }
-    
-    // Вес рулей падает при срыве
-    for (const auto& out : outputs) {
-        if (out.is_wing_stalled) {
-            w_fin *= out.is_wing_stalled ? 0.7 : 1.0;
-        }
-    }
-    
-    // Веса по Маху
-    const auto mach_weights = calculateMachWeights(state.M);
-    
-    // Суммирование коэффициентов
-    // Теперь каждый AeroOutput содержит component_name и component_type для надёжной связи
+
     for (size_t i = 0; i < outputs.size(); ++i) {
         const auto& out = outputs[i];
-        // Выбор веса в зависимости от типа компонента
-        double type_weight = 1.0;
-        ComponentType comp_type = out.component_type;  // ← Используем из AeroOutput
-        
-        // Упрощённое суммирование (веса применяются внутри компонентов)
+
         result.Cx += out.Cx;
         result.Cy += out.Cy;
         result.Cz += out.Cz;
-        
         result.mx += out.mx;
         result.my += out.my;
         result.mz += out.mz;
-        
         result.dCx_dalpha += out.dCx_dalpha;
         result.dCz_dalpha += out.dCz_dalpha;
         result.dmy_dalpha += out.dmy_dalpha;
@@ -2257,78 +2050,77 @@ AeroOutput AerodynamicsModel::sumComponents(const std::vector<AeroOutput>& outpu
         result.dmz_dbeta += out.dmz_dbeta;
         result.dCz_ddelta += out.dCz_ddelta;
         result.dmy_ddelta += out.dmy_ddelta;
-        
         result.dCz_dq += out.dCz_dq;
         result.dmy_dq += out.dmy_dq;
         result.dCy_dr += out.dCy_dr;
         result.dmz_dr += out.dmz_dr;
         result.dmx_dp += out.dmx_dp;
     }
-    
-    // Диагностика
+
     result.is_transonic = (state.M >= 0.8 && state.M <= 1.2);
-    
-    // Вычисление общего центра давления (взвешенное среднее)
-    double total_Cz = std::abs(result.Cz);
-    if (total_Cz > 1e-6) {
-        double x_cp_sum = 0.0;
-        for (const auto& out : outputs) {
-            const double weight = std::abs(out.Cz) / total_Cz;
-            x_cp_sum += out.x_cp * weight;
+
+    // === FIX #6: ФИЗИЧЕСКИ КОРРЕКТНЫЙ РАСЧЁТ X_CP ИЗ БАЛАНСА МОМЕНТОВ ===
+    const double Cz_total = result.Cz;
+    const double my_total = result.my;
+    const double c_ref = config_.global.c_ref;
+
+    double L_body = 1.0;
+    for (const auto& cfg : config_.components) {
+        if (cfg.type == ComponentType::BODY) {
+            L_body = cfg.length;
+            break;
         }
-        result.x_cp = x_cp_sum;
-    } else {
-        // При нулевой подъёмной силе берём среднее арифметическое
-        double x_cp_sum = 0.0;
-        for (const auto& out : outputs) {
-            x_cp_sum += out.x_cp;
-        }
-        result.x_cp = x_cp_sum / static_cast<double>(outputs.size());
     }
-    
-    // Статический запас устойчивости
-    result.static_margin = (result.x_cp - state.x_com) / config_.global.c_ref;
-    
-    // Флаги сваливания
+
+    if (std::abs(Cz_total) > 1e-4) {
+        // my = -Cz * (x_cp - x_com) / c_ref
+        // Отсюда: x_cp = x_com - my * c_ref / Cz
+        result.x_cp = state.x_com - my_total * c_ref / Cz_total;
+    } else {
+        const double nominal_static_margin = 0.20;
+        result.x_cp = state.x_com + nominal_static_margin * c_ref;
+
+        std::cerr << "[AERO DEBUG] Cz ≈ 0, using fallback x_cp = " << result.x_cp << " m" << std::endl;
+    }
+
+    // === FIX #7: EMERGENCY CLAMP ТОЛЬКО ДЛЯ АБСУРДНЫХ ЗНАЧЕНИЙ ===
+    if (result.x_cp < -L_body || result.x_cp > 3.0 * L_body) {
+        std::cerr << "[AERO WARNING] x_cp = " << result.x_cp
+                  << " m is absurd — applying emergency fallback" << std::endl;
+        const double nominal_static_margin = 0.20;
+        result.x_cp = state.x_com + nominal_static_margin * c_ref;
+    }
+
+    result.static_margin = (result.x_cp - state.x_com) / c_ref;
+
     for (const auto& out : outputs) {
         result.is_body_stalled = result.is_body_stalled || out.is_body_stalled;
         result.is_wing_stalled = result.is_wing_stalled || out.is_wing_stalled;
     }
-    
+
     return result;
 }
 
 double AerodynamicsModel::calculateEpsilonFromOutputs(const std::vector<AeroOutput>& outputs,
                                                      const AeroState& state) const {
-    // Скос потока (downwash) вычисляется на основе подъёмной силы крыла
-    // Формула: epsilon ≈ k * CL_wing, где k ≈ 0.3 для типичных конфигураций
-    
-    // Найти wing output
     for (const auto& out : outputs) {
         if (out.component_type == ComponentType::WING) {
-            // Вычисляем CL крыла из Cz
             const double alpha_rad = state.alpha * M_PI / 180.0;
             const double cos_alpha = std::cos(alpha_rad);
-            
-            // Защита от деления на ноль при alpha ≈ 90°
+
             if (std::abs(cos_alpha) < 0.01) {
                 return 0.0;
             }
-            
+
             const double CL_wing = -out.Cz / cos_alpha;
-            
-            // Скос потока пропорционален подъёмной силе
-            // Коэффициент 0.3 - типичное значение для крыло-хвост конфигурации
             return 0.3 * CL_wing;
         }
     }
-    
-    // Если крыла нет, скос потока нулевой
+
     return 0.0;
 }
 
 } // namespace aero
-
 ```
 
 

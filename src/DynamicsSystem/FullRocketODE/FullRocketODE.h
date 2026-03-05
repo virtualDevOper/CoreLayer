@@ -1,7 +1,7 @@
 #pragma once
 #include "../IDynamicsSystem.h"
 #include "../../../include/math/FlightMath.h"
-#include "../../utils/DynamicParametersProviderForFullRocketModel.h"
+#include "../../utils/ParameterProvider/DynamicParametersProvider.h"
 #include "../../WorldModel/AbstractWorldModel.h"
 #include "../../../include/aero_simpi/aerodynamics.h"
 
@@ -17,7 +17,7 @@
  * Body frame (связанная СК ракеты):
  *   X_b → Nose (нос ракеты)
  *   Y_b → Right wing (правый борт)
- *   Z_b ↓ Down (вниз, для правой системы: X × Y = Z)
+ *   Z_b ↑ Up
  *
  * Euler angles vector: [psi, theta, gamma]
  *   euler[0] = psi   (yaw/курс)   — поворот вокруг Z_e
@@ -40,13 +40,11 @@
 template <typename metricType>
 class FullRocketODE final : public IDynamicsSystem<metricType> {
 private:
-    std::weak_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider_;
+    std::weak_ptr<DynamicParametersProvider<metricType>> params_provider_;
     std::weak_ptr<AbstractWorldModel<metricType>> world_;
     std::shared_ptr<aero::AerodynamicsModel> aero_model_;
-    // Cache last computed forces and moments for snapshot augmentation
     mutable Eigen::Vector3<metricType> last_computed_forces_;
     mutable Eigen::Vector3<metricType> last_computed_moments_;
-    // Cache last aerodynamic output for snapshot augmentation
     mutable aero::AeroOutput last_aero_output_;
     mutable metricType last_alpha_;
     mutable metricType last_beta_;
@@ -54,7 +52,7 @@ private:
 
 public:
     explicit FullRocketODE(
-        std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
+        std::shared_ptr<DynamicParametersProvider<metricType>> params_provider,
         std::shared_ptr<AbstractWorldModel<metricType>> world,
         std::shared_ptr<aero::AerodynamicsModel> aero_model
     );
@@ -72,18 +70,17 @@ public:
     ) const override;
 
 private:
-
     metricType computeSpaceAngleOfAttack(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeAerodynamicRollAngle(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeSideslipAngle(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeMachNumber(metricType V_magnitude, const Eigen::Vector3<metricType>& position) const;
     metricType computeAirDensity(const Eigen::Vector3<metricType>& position) const;
-    
+
     Eigen::Vector3<metricType> computeTotalForcesENU(
-    const Eigen::Vector3<metricType>& F_aero_body,
-    const Eigen::Vector3<metricType>& F_thrust_body,
-    metricType mass,
-    const core::math::Matrix3& dcm) const;
+        const Eigen::Vector3<metricType>& F_aero_body,
+        const Eigen::Vector3<metricType>& F_thrust_body,
+        metricType mass,
+        const core::math::Matrix3& dcm) const;
 
     Eigen::Vector3<metricType> computeLinearAccelerationENU(
         const Eigen::Vector3<metricType>& F_sum,

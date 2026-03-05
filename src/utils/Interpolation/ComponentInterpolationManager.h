@@ -4,7 +4,7 @@
 
 #pragma once
 #include "PCH.h"
-#include "../IParameterProvider.h"
+#include "../ParameterProvider/IParameterProvider.h"
 #include "ILinearInterpolator/ILinearInterpolator.h"
 #include "IBilinearInterpolator/IBilinearInterpolator.h"
 
@@ -17,9 +17,10 @@
  * так что можешь просто добавлять их сюда, всего учесть сразу не могу, вдруг ты
  * захочешь скорость интерполировать)))
  */
-
 template<typename metricType>
-class ComponentInterpolationManager : public IParameterProvider<metricType> {
+class ComponentInterpolationManager final
+    : public IParameterProvider<metricType>
+{
 private:
     // === МАССА И ИНЕРЦИЯ ===
     std::unique_ptr<ILinearInterpolator<metricType>> mass_;
@@ -32,7 +33,7 @@ private:
     std::unique_ptr<ILinearInterpolator<metricType>> COM_y_;
     std::unique_ptr<ILinearInterpolator<metricType>> COM_z_;
 
-    // === ТЯГА ОТ ДВИГАТЕЛЕЙ ===
+    // === ТЯГА ===
     std::unique_ptr<ILinearInterpolator<metricType>> thrust_x_;
     std::unique_ptr<ILinearInterpolator<metricType>> thrust_y_;
     std::unique_ptr<ILinearInterpolator<metricType>> thrust_z_;
@@ -51,22 +52,24 @@ private:
 
 public:
     ComponentInterpolationManager() = default;
+    ~ComponentInterpolationManager() override = default;
 
-    // ============ УСТАНОВЩИКИ ============
+    // ========================================================================
+    // СЕТТЕРЫ
+    // ========================================================================
 
     void setMass(std::unique_ptr<ILinearInterpolator<metricType>> interp) {
         mass_ = std::move(interp);
     }
 
     void setCOM(
-        std::unique_ptr<ILinearInterpolator<metricType>> x_COM,
-        std::unique_ptr<ILinearInterpolator<metricType>> y_COM,
-        std::unique_ptr<ILinearInterpolator<metricType>> z_COM) {
-        COM_x_ = std::move(x_COM);
-        COM_y_ = std::move(y_COM);
-        COM_z_ = std::move(z_COM);
+        std::unique_ptr<ILinearInterpolator<metricType>> x,
+        std::unique_ptr<ILinearInterpolator<metricType>> y,
+        std::unique_ptr<ILinearInterpolator<metricType>> z) {
+        COM_x_ = std::move(x);
+        COM_y_ = std::move(y);
+        COM_z_ = std::move(z);
     }
-
 
     void setInertia(
         std::unique_ptr<ILinearInterpolator<metricType>> ix,
@@ -108,27 +111,21 @@ public:
         a_ck_otn_aero_ = std::move(a_ck_otn);
     }
 
-    // ============ ГЕТТЕРЫ С ПРОВЕРКАМИ ============
-    // Реализация интерфейса IParameterProvider
+    // ========================================================================
+    // РЕАЛИЗАЦИЯ СТАРОГО КОНТРАКТА (для обратной совместимости)
+    // ========================================================================
+
     [[nodiscard]] metricType getMass(metricType t) const override {
-        if (!mass_) throw std::runtime_error("Интерполятор массы не установлен");
+        if (!mass_) {
+            throw std::runtime_error("Интерполятор массы не установлен");
+        }
         return mass_->interpolate(t);
     }
 
-    [[nodiscard]] Eigen::Vector3<metricType> getCOM(metricType t) const override {
-        if (!COM_x_) throw std::runtime_error("Интерполятор COM не установлен");
-        return Eigen::Vector3<metricType>(
-            COM_x_->interpolate(t),
-            COM_y_->interpolate(t),
-            COM_z_->interpolate(t)
-        );
-    }
-
-
-
     [[nodiscard]] Eigen::Vector3<metricType> getInertia(metricType t) const override {
-        if (!inertia_x_ || !inertia_y_ || !inertia_z_)
+        if (!inertia_x_ || !inertia_y_ || !inertia_z_) {
             throw std::runtime_error("Интерполяторы моментов инерции не установлены");
+        }
         return Eigen::Vector3<metricType>(
             inertia_x_->interpolate(t),
             inertia_y_->interpolate(t),
@@ -137,8 +134,9 @@ public:
     }
 
     [[nodiscard]] Eigen::Vector3<metricType> getThrust(metricType t) const override {
-        if (!thrust_x_ || !thrust_y_ || !thrust_z_)
+        if (!thrust_x_ || !thrust_y_ || !thrust_z_) {
             throw std::runtime_error("Интерполяторы тяги не установлены");
+        }
         return Eigen::Vector3<metricType>(
             thrust_x_->interpolate(t),
             thrust_y_->interpolate(t),
@@ -146,22 +144,103 @@ public:
         );
     }
 
-    metricType getCxAero(metricType alpha, metricType mach) const {
-        if (!cx_aero_) throw std::runtime_error("Интерполятор Cx не установлен");
+    [[nodiscard]] Eigen::Vector3<metricType> getCOM(metricType t) const override {
+        if (!COM_x_ || !COM_y_ || !COM_z_) {
+            throw std::runtime_error("Интерполяторы COM не установлены");
+        }
+        return Eigen::Vector3<metricType>(
+            COM_x_->interpolate(t),
+            COM_y_->interpolate(t),
+            COM_z_->interpolate(t)
+        );
+    }
+
+    // ========================================================================
+    // РЕАЛИЗАЦИЯ НОВОГО КОНТРАКТА (std::optional, без исключений)
+    // ========================================================================
+
+    [[nodiscard]] std::optional<metricType> tryGetMass(metricType t) const override {
+        if (!mass_) {
+            return std::nullopt;
+        }
+        return mass_->interpolate(t);
+    }
+
+    [[nodiscard]] bool hasMass() const override {
+        return mass_ != nullptr;
+    }
+
+    [[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetInertia(metricType t) const override {
+        if (!inertia_x_ || !inertia_y_ || !inertia_z_) {
+            return std::nullopt;
+        }
+        return Eigen::Vector3<metricType>(
+            inertia_x_->interpolate(t),
+            inertia_y_->interpolate(t),
+            inertia_z_->interpolate(t)
+        );
+    }
+
+    [[nodiscard]] bool hasInertia() const override {
+        return inertia_x_ && inertia_y_ && inertia_z_;
+    }
+
+    [[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetThrust(metricType t) const override {
+        if (!thrust_x_ || !thrust_y_ || !thrust_z_) {
+            return std::nullopt;
+        }
+        return Eigen::Vector3<metricType>(
+            thrust_x_->interpolate(t),
+            thrust_y_->interpolate(t),
+            thrust_z_->interpolate(t)
+        );
+    }
+
+    [[nodiscard]] bool hasThrust() const override {
+        return thrust_x_ && thrust_y_ && thrust_z_;
+    }
+
+    [[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetCOM(metricType t) const override {
+        if (!COM_x_ || !COM_y_ || !COM_z_) {
+            return std::nullopt;
+        }
+        return Eigen::Vector3<metricType>(
+            COM_x_->interpolate(t),
+            COM_y_->interpolate(t),
+            COM_z_->interpolate(t)
+        );
+    }
+
+    [[nodiscard]] bool hasCOM() const override {
+        return COM_x_ && COM_y_ && COM_z_;
+    }
+
+    // ========================================================================
+    // АЭРОДИНАМИЧЕСКИЕ МЕТОДЫ (для внутреннего использования)
+    // ========================================================================
+
+    [[nodiscard]] metricType getCxAero(metricType alpha, metricType mach) const {
+        if (!cx_aero_) {
+            throw std::runtime_error("Интерполятор Cx не установлен");
+        }
         return cx_aero_->interpolate(alpha, mach);
     }
 
-    metricType getCyAero(metricType alpha, metricType mach) const {
-        if (!cy_aero_) throw std::runtime_error("Интерполятор Cy не установлен");
+    [[nodiscard]] metricType getCyAero(metricType alpha, metricType mach) const {
+        if (!cy_aero_) {
+            throw std::runtime_error("Интерполятор Cy не установлен");
+        }
         return cy_aero_->interpolate(alpha, mach);
     }
 
-    metricType getCzAero(metricType alpha, metricType mach) const {
-        if (!cz_aero_) throw std::runtime_error("Интерполятор Cz не установлен");
+    [[nodiscard]] metricType getCzAero(metricType alpha, metricType mach) const {
+        if (!cz_aero_) {
+            throw std::runtime_error("Интерполятор Cz не установлен");
+        }
         return cz_aero_->interpolate(alpha, mach);
     }
 
-    Eigen::Vector3<metricType> getAerodynamicForceCoefficients(
+    [[nodiscard]] Eigen::Vector3<metricType> getAerodynamicForceCoefficients(
         metricType alpha, metricType mach) const {
         return Eigen::Vector3<metricType>(
             getCxAero(alpha, mach),
@@ -170,28 +249,38 @@ public:
         );
     }
 
-    metricType getCyRAero(metricType alpha, metricType mach) const {
-        if (!cy_r_aero_) throw std::runtime_error("Интерполятор Cy_r не установлен");
+    [[nodiscard]] metricType getCyRAero(metricType alpha, metricType mach) const {
+        if (!cy_r_aero_) {
+            throw std::runtime_error("Интерполятор Cy_r не установлен");
+        }
         return cy_r_aero_->interpolate(alpha, mach);
     }
 
-    metricType getCyKAero(metricType alpha, metricType mach) const {
-        if (!cy_k_aero_) throw std::runtime_error("Интерполятор Cy_k не установлен");
+    [[nodiscard]] metricType getCyKAero(metricType alpha, metricType mach) const {
+        if (!cy_k_aero_) {
+            throw std::runtime_error("Интерполятор Cy_k не установлен");
+        }
         return cy_k_aero_->interpolate(alpha, mach);
     }
 
-    metricType getCyStAero(metricType alpha, metricType mach) const {
-        if (!cy_st_aero_) throw std::runtime_error("Интерполятор Cy_st не установлен");
+    [[nodiscard]] metricType getCyStAero(metricType alpha, metricType mach) const {
+        if (!cy_st_aero_) {
+            throw std::runtime_error("Интерполятор Cy_st не установлен");
+        }
         return cy_st_aero_->interpolate(alpha, mach);
     }
 
-    metricType getXdKAero(metricType alpha, metricType mach) const {
-        if (!xd_k_aero_) throw std::runtime_error("Интерполятор Xd_k не установлен");
+    [[nodiscard]] metricType getXdKAero(metricType alpha, metricType mach) const {
+        if (!xd_k_aero_) {
+            throw std::runtime_error("Интерполятор Xd_k не установлен");
+        }
         return xd_k_aero_->interpolate(alpha, mach);
     }
 
-    metricType getAckOtnAero(metricType alpha, metricType mach) const {
-        if (!a_ck_otn_aero_) throw std::runtime_error("Интерполятор a_ck_otn не установлен");
+    [[nodiscard]] metricType getAckOtnAero(metricType alpha, metricType mach) const {
+        if (!a_ck_otn_aero_) {
+            throw std::runtime_error("Интерполятор a_ck_otn не установлен");
+        }
         return a_ck_otn_aero_->interpolate(alpha, mach);
     }
 };

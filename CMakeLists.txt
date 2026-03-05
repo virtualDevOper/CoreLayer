@@ -76,14 +76,14 @@ add_executable(CoreLayer main.cpp
         src/PhysicalObjects/SimpleObject/SimpleObject.cpp
         src/PhysicalObjects/SimpleObject/SimpleObject.h
         src/utils/Interpolation/ComponentInterpolationManager.h
-        src/utils/DynamicParametersProviderForFullRocketModel.h
+        src/utils/ParameterProvider/DynamicParametersProvider.h
         src/utils/ObjManager/IObjectManager.h
 
         src/utils/KinematicState/KinematicState.h
         src/utils/KinematicState/KinematicState.cpp
         src/utils/SimulationConfig.cpp
         src/utils/SimulationConfig.h
-        src/utils/IParameterProvider.h
+        src/utils/ParameterProvider/IParameterProvider.h
         src/utils/KinematicStateDerivative/KinematicStateDerivative.cpp
         src/utils/KinematicStateDerivative/KinematicStateDerivative.h
         
@@ -95,6 +95,7 @@ add_executable(CoreLayer main.cpp
         src/DynamicsSystem/Aerodynamics/SimplifiedAeroModel.h
         src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.cpp
         src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.h
+        src/utils/ParameterProvider/ParameterProviderFactory.h
 )
 
 

@@ -1,10 +1,11 @@
 # CoreLayer - Полный код проекта
-# Сгенерировано: 2026-03-04 15:43:38
+# Сгенерировано: 2026-03-05 12:49:32
 # ==========================================
 
 
 ### Файл: main.cpp
 ```cpp
+#include "PCH.h"
 #include "include/core/Model.h"
 #include "src/DynamicsSystem/FullRocketODE/FullRocketODE.h"
 #include "src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.h"
@@ -14,22 +15,22 @@
 #include "src/WorldModel/WorldComponents/GravityModel/KavendishModel/KavendishModel.h"
 #include "src/WorldModel/WorldComponents/ITerrainModel/PlaneTerrain/PlaneTerrain.h"
 #include "src/WorldModel/WorldComponents/WindModel/NoWindModel/NoWindModel.h"
-#include "PCH.h"
 #include "src/PhysicalObjects/Aircraft/Missle/GuidedMissle/MANPADS/V1/MANPAD_V1.h"
-
 #include "src/SimulationMomento/SimulationMomento.h"
 #include "src/utils/SimulationDescriber.h"
 #include "src/utils/ContinuationCallback.h"
 #include "src/utils/ObjInitParams.h"
 #include "src/utils/DataTable/DataTable1D/uploader1D_fromTXT.h"
 #include "src/utils/DataTable/DataTable2D/uploader2D_fromTXT.h"
-#include "src/utils/IParameterProvider.h"
+#include "src/utils/ParameterProvider/IParameterProvider.h"
 #include "include/core/GLOBAL_CONFIG.h"
 #include "src/PhysicalObjects/SimpleObject/SimpleObject.h"
-#include "src/utils/DynamicParametersProviderForFullRocketModel.h"
+#include "src/utils/ParameterProvider/DynamicParametersProvider.h"
+#include "src/utils/ParameterProvider/ParameterProviderFactory.h"
 #include "src/utils/ObjManager/ObjectManager.h"
 #include "src/utils/SimulationConfig.h"
 #include "include/aero_simpi/aerodynamics.h"
+#include "src/utils/Interpolation/ComponentInterpolationManager.h"
 
 auto loadDataTable = [](const std::string& filename) {
     try {
@@ -46,18 +47,28 @@ int main() {
         // === ШАГ 0: ЗАГРУЗКА КОНФИГУРАЦИИ ===
         auto config = SimulationConfig::loadFromJsonFile("../config/simulation.json");
 
+        // Ресурс-менеджер для автоматического освобождения памяти
         struct ResourceManager {
             std::shared_ptr<SimpleWorld<GLOBAL_CONFIG::PROJECT_TYPE>> world;
             std::unique_ptr<SimulationDescriber> describer;
             std::unique_ptr<SimulationMomento<GLOBAL_CONFIG::PROJECT_TYPE>> csvDataSaver;
             std::shared_ptr<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>> manager;
             std::shared_ptr<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>> golubka_V1;
-            std::shared_ptr<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>> golubka_V1_interp_mgr;
+
+            // Храним конкретный тип для настройки интерполяторов
+            std::shared_ptr<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>> golubka_V1_interp_mgr_concrete;
+
+            // === УДАЛЕНО: golubka_V1_interp_mgr_base больше не нужен ===
+            // shared_ptr<ComponentInterpolationManager> неявно конвертируется в weak_ptr<IParameterProvider>
+            // при передаче в конструктор MANPAD_V1 — это безопасно и архитектурно чисто.
+
             ~ResourceManager() {
                 golubka_V1.reset();
                 manager.reset();
                 csvDataSaver.reset();
                 world.reset();
+                golubka_V1_interp_mgr_concrete.reset();
+                // === УДАЛЕНО: golubka_V1_interp_mgr_base.reset(); ===
             }
         } resource_manager;
 
@@ -77,21 +88,19 @@ int main() {
         }
 
         // === ШАГ 2: НАСТРОЙКА СОХРАНЕНИЯ ДАННЫХ ===
-        resource_manager.describer = std::make_unique<SimulationDescriber>(3);// UTC+3
+        resource_manager.describer = std::make_unique<SimulationDescriber>(3); // UTC+3
         resource_manager.describer->setOperatorName(config.operator_name);
         resource_manager.describer->setOdeSolver(config.ode_solver);
         resource_manager.describer->setWorldConfig(config.world_config);
         resource_manager.describer->setDataSaver(config.data_saver);
         resource_manager.describer->setEarthType(config.earth_type);
 
-
-
         resource_manager.csvDataSaver = std::make_unique<SimulationMomento<GLOBAL_CONFIG::PROJECT_TYPE>>();
         resource_manager.csvDataSaver->setStrategy(
             std::make_unique<CsvSaveStrategy<GLOBAL_CONFIG::PROJECT_TYPE>>(config.output_csv));
         resource_manager.csvDataSaver->addTrackedObjs({});
 
-        // === ШАГ 3: ЗАГРУЗКА ДАННЫХ ===
+        // === ШАГ 3: ЗАГРУЗКА ДАННЫХ ИЗ ФАЙЛОВ ===
         auto Thrust_x_t_data = loadDataTable(config.thrust_x_path);
         auto Thrust_y_t_data = loadDataTable(config.thrust_y_path);
         auto Thrust_z_t_data = loadDataTable(config.thrust_z_path);
@@ -99,95 +108,106 @@ int main() {
         auto Ixx_data = loadDataTable(config.Ixx_path);
         auto Iyy_data = loadDataTable(config.Iyy_path);
         auto Izz_data = loadDataTable(config.Izz_path);
-        // После загрузки Izz_data добавь:
         auto x_com_data = loadDataTable(config.COM_x_path);
         auto y_com_data = loadDataTable(config.COM_y_path);
         auto z_com_data = loadDataTable(config.COM_z_path);
 
-        // === ШАГ 4:СОЗДАТЬ И ИНИЦИАЛИЗИРОВАТЬ интерполятор ===
-        resource_manager.golubka_V1_interp_mgr = std::make_shared<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
-        resource_manager.golubka_V1_interp_mgr->setThrust(
+        // === ШАГ 4: СОЗДАНИЕ И НАСТРОЙКА МЕНЕДЖЕРА ИНТЕРПОЛЯЦИИ ===
+        // Создаём как конкретный тип для доступа к set-методам
+        resource_manager.golubka_V1_interp_mgr_concrete =
+            std::make_shared<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
+
+        resource_manager.golubka_V1_interp_mgr_concrete->setThrust(
             std::move(Thrust_x_t_data),
             std::move(Thrust_y_t_data),
             std::move(Thrust_z_t_data)
         );
-        resource_manager.golubka_V1_interp_mgr->setCOM(
+
+        resource_manager.golubka_V1_interp_mgr_concrete->setCOM(
             std::move(x_com_data),
             std::move(y_com_data),
             std::move(z_com_data)
         );
 
-        resource_manager.golubka_V1_interp_mgr->setMass(std::move(mass_data));
-        resource_manager.golubka_V1_interp_mgr->setInertia(
+        resource_manager.golubka_V1_interp_mgr_concrete->setMass(std::move(mass_data));
+
+        resource_manager.golubka_V1_interp_mgr_concrete->setInertia(
             std::move(Ixx_data),
             std::move(Iyy_data),
             std::move(Izz_data)
         );
 
-        // === ШАГ 5:ТЕПЕРЬ МОЖНО СОЗДАВАТЬ ПРОВАЙДЕР (менеджер уже существует!) ===
-        auto paramsProvider = std::make_shared<DynamicParametersProviderForFullRocketModel<GLOBAL_CONFIG::PROJECT_TYPE>>(
-            resource_manager.golubka_V1_interp_mgr
+        // === УДАЛЕНО: static_pointer_cast больше не нужен ===
+        // golubka_V1_interp_mgr_base удалён — неявная конвертация при передаче в MANPAD_V1
+
+        // === ШАГ 5: СОЗДАНИЕ ПРОВАЙДЕРА ЧЕРЕЗ ФАБРИКУ ===
+        auto paramsProvider = std::make_shared<DynamicParametersProvider<GLOBAL_CONFIG::PROJECT_TYPE>>(
+            ParameterProviderFactory<GLOBAL_CONFIG::PROJECT_TYPE>::createFromManager(
+                resource_manager.golubka_V1_interp_mgr_concrete,  // конкретный тип для factory
+                true,   // need_mass
+                true,   // need_inertia
+                true,   // need_thrust
+                true    // need_com
+            )
         );
 
-        // === ШАГ 6: ЗАПОЛНЕНИЕ АЭРОДИНАМИЧЕСКИХ ПАРАМЕТРОВ ===
-
-
-        // === ШАГ 7: НАЧАЛЬНЫЕ УСЛОВИЯ (50 м/с под 15°, угловая скорость 5 град/с по тангажу) ===
+        // === ШАГ 6: НАЧАЛЬНЫЕ УСЛОВИЯ ===
         auto golubka_V1_init_params = std::make_unique<ObjInitParams<GLOBAL_CONFIG::PROJECT_TYPE>>();
         golubka_V1_init_params->position = config.rocket_init.position.cast<GLOBAL_CONFIG::PROJECT_TYPE>();
         golubka_V1_init_params->velocity = config.rocket_init.velocity.cast<GLOBAL_CONFIG::PROJECT_TYPE>();
         golubka_V1_init_params->eulerAngles = config.rocket_init.euler.cast<GLOBAL_CONFIG::PROJECT_TYPE>();
         golubka_V1_init_params->angularVelocity = config.rocket_init.angular_velocity.cast<GLOBAL_CONFIG::PROJECT_TYPE>();
 
-        // === ШАГ 8: ЗАГРУЗКА АЭРОДИНАМИЧЕСКОЙ МОДЕЛИ ===
+        // === ШАГ 7: ЗАГРУЗКА АЭРОДИНАМИЧЕСКОЙ МОДЕЛИ ===
         auto aero_model = aero::AerodynamicsModel::createFromFile("../config/aerodynamics_rocket_1m.json");
-        
-        // === ШАГ 9: СОЗДАНИЕ СИСТЕМЫ И РАКЕТЫ ===
+
+        // === ШАГ 8: СОЗДАНИЕ ODE-СИСТЕМЫ ===
         auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(
             paramsProvider,
             resource_manager.world,
             aero_model
         );
 
+        // === ШАГ 9: СОЗДАНИЕ ОБЪЕКТА MANPAD_V1 ===
+        // Передаём concrete-указатель напрямую — неявная конвертация в weak_ptr<IParameterProvider>
+        // Теперь static_pointer_cast работает, т.к. virtual убран из IParameterProvider
         resource_manager.golubka_V1 = std::make_shared<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>>(
             std::move(golubka_V1_system),
             std::move(golubka_V1_init_params),
-            std::weak_ptr<IParameterProvider<GLOBAL_CONFIG::PROJECT_TYPE>>(resource_manager.golubka_V1_interp_mgr)
+            resource_manager.golubka_V1_interp_mgr_concrete  // <-- implicit conversion to weak_ptr<IParameterProvider>
         );
 
-        // === ШАГ 9: КРИТИЧЕСКИ ВАЖНО — ПРАВИЛЬНЫЙ ТИП КОЛБЭКА ===
+        // === ШАГ 10: НАСТРОЙКА SOLVER ===
         using CallbackType = GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>;
         auto solver = std::make_unique<RungeKutta4Solver<GLOBAL_CONFIG::PROJECT_TYPE, CallbackType>>();
 
-        // === ШАГ 10: СОЗДАНИЕ МЕНЕДЖЕРА ОБЪЕКТОВ ===
+        // === ШАГ 11: СОЗДАНИЕ МЕНЕДЖЕРА ОБЪЕКТОВ ===
         resource_manager.manager = std::make_shared<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
         auto golubka_V1_ID = resource_manager.manager->addTrackedObject(resource_manager.golubka_V1);
 
-        // === ШАГ 11: КОЛБЭК С ПРОВЕРКОЙ ВЫСОТЫ (пока что он будет тут) ===
+        // === ШАГ 12: КОЛБЭК С ПРОВЕРКОЙ УСЛОВИЙ ОСТАНОВКИ ===
         auto continue_callback = [golubka_V1_ID, config](
-            const std::shared_ptr<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>& object_manager, const GLOBAL_CONFIG::PROJECT_TYPE current_time
+            const std::shared_ptr<IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>& object_manager,
+            const GLOBAL_CONFIG::PROJECT_TYPE current_time
         ) -> bool {
             const auto obj = object_manager->getObjectByID(golubka_V1_ID);
             if (!obj || !obj->isActive()) return false;
             if (current_time > config.max_time) return false;
             const auto& state = obj->getStateSnapshot();
             const auto height = state.getPosition().z();
-            return height >= -0.1f;  // Остановка при ударе о землю
+            return height >= static_cast<GLOBAL_CONFIG::PROJECT_TYPE>(-0.1);
         };
 
-
-
-        // === ШАГ 12: ПОЛУЧЕНИЕ ВСЕХ ID ИЗ МЕНЕДЖЕРА ===
+        // === ШАГ 13: СБОР ID ВСЕХ ОБЪЕКТОВ ДЛЯ ОПИСАНИЯ ===
         auto all_objects = resource_manager.manager->getAllObjects();
         std::vector<int> ids;
         ids.reserve(all_objects.size());
         for (const auto& [id, obj_weak_ptr] : all_objects) {
             ids.push_back(id);
         }
-
         resource_manager.describer->setSimulationObjects(ids);
 
-        // === ШАГ 13: ЗАПУСК СИМУЛЯЦИИ ===
+        // === ШАГ 14: ЗАПУСК СИМУЛЯЦИИ ===
         IModel<GLOBAL_CONFIG::PROJECT_TYPE, CallbackType> model(
             std::move(solver),
             resource_manager.world,
@@ -200,12 +220,10 @@ int main() {
 
         model.run();
 
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception& e) {
         std::cerr << "Main error: " << e.what() << std::endl;
         return 1;
-    }
-    catch (...) {
+    } catch (...) {
         std::cerr << "Unknown error in main" << std::endl;
         return 1;
     }
@@ -294,14 +312,14 @@ add_executable(CoreLayer main.cpp
         src/PhysicalObjects/SimpleObject/SimpleObject.cpp
         src/PhysicalObjects/SimpleObject/SimpleObject.h
         src/utils/Interpolation/ComponentInterpolationManager.h
-        src/utils/DynamicParametersProviderForFullRocketModel.h
+        src/utils/ParameterProvider/DynamicParametersProvider.h
         src/utils/ObjManager/IObjectManager.h
 
         src/utils/KinematicState/KinematicState.h
         src/utils/KinematicState/KinematicState.cpp
         src/utils/SimulationConfig.cpp
         src/utils/SimulationConfig.h
-        src/utils/IParameterProvider.h
+        src/utils/ParameterProvider/IParameterProvider.h
         src/utils/KinematicStateDerivative/KinematicStateDerivative.cpp
         src/utils/KinematicStateDerivative/KinematicStateDerivative.h
         
@@ -309,6 +327,11 @@ add_executable(CoreLayer main.cpp
         include/aero_simpi/src/component.cpp
         include/aero_simpi/src/model.cpp
         include/aero_simpi/src/parser.cpp
+        src/DynamicsSystem/Aerodynamics/SimplifiedAeroModel.cpp
+        src/DynamicsSystem/Aerodynamics/SimplifiedAeroModel.h
+        src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.cpp
+        src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.h
+        src/utils/ParameterProvider/ParameterProviderFactory.h
 )
 
 
@@ -542,12 +565,64 @@ private:
 ## Исходный код
 
 
+### Файл: src\DynamicsSystem\Aerodynamics\SimplifiedAeroModel.h
+```cpp
+// src/DynamicsSystem/Aerodynamics/SimplifiedAeroModel.h
+#pragma once
+#include "PCH.h"
+#include "../../utils/Interpolation/ILinearInterpolator/ILinearInterpolator.h"
+
+/**
+ * @brief Упрощённая аэродинамика для 3DOF-модели сетевого снаряда.
+ *
+ * @details Только лобовое сопротивление Cx(α).
+ * После раскрытия сетка всегда ориентирована "лицом" к потоку.
+ */
+template<typename metricType>
+class SimplifiedAeroModel {
+private:
+    std::unique_ptr<ILinearInterpolator<metricType>> cx_before_;
+    std::unique_ptr<ILinearInterpolator<metricType>> cx_after_;
+    std::unique_ptr<ILinearInterpolator<metricType>> s_ref_interp_;
+
+    metricType deploy_start_time_;
+    metricType deploy_duration_;
+
+public:
+    SimplifiedAeroModel(
+        std::unique_ptr<ILinearInterpolator<metricType>> cx_before,
+        std::unique_ptr<ILinearInterpolator<metricType>> cx_after,
+        std::unique_ptr<ILinearInterpolator<metricType>> s_ref_interp,
+        metricType deploy_start = 1.5,
+        metricType deploy_dur = 0.2
+    );
+
+    /**
+     * @brief Вычисляет силу сопротивления в ENU-СК.
+     * @param V_enu Скорость в ENU [м/с]
+     * @param rho Плотность воздуха [кг/м³]
+     * @param t Время [с]
+     * @return Вектор силы [Н] в ENU
+     */
+    Eigen::Vector3<metricType> computeForceENU(
+        const Eigen::Vector3<metricType>& V_enu,
+        metricType rho,
+        metricType t
+    ) const;
+
+    [[nodiscard]] bool isDeployed(metricType t) const {
+        return t >= deploy_start_time_ + deploy_duration_;
+    }
+};
+```
+
+
 ### Файл: src\DynamicsSystem\FullRocketODE\FullRocketODE.h
 ```cpp
 #pragma once
 #include "../IDynamicsSystem.h"
 #include "../../../include/math/FlightMath.h"
-#include "../../utils/DynamicParametersProviderForFullRocketModel.h"
+#include "../../utils/ParameterProvider/DynamicParametersProvider.h"
 #include "../../WorldModel/AbstractWorldModel.h"
 #include "../../../include/aero_simpi/aerodynamics.h"
 
@@ -563,7 +638,7 @@ private:
  * Body frame (связанная СК ракеты):
  *   X_b → Nose (нос ракеты)
  *   Y_b → Right wing (правый борт)
- *   Z_b ↓ Down (вниз, для правой системы: X × Y = Z)
+ *   Z_b ↑ Up
  *
  * Euler angles vector: [psi, theta, gamma]
  *   euler[0] = psi   (yaw/курс)   — поворот вокруг Z_e
@@ -586,13 +661,11 @@ private:
 template <typename metricType>
 class FullRocketODE final : public IDynamicsSystem<metricType> {
 private:
-    std::weak_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider_;
+    std::weak_ptr<DynamicParametersProvider<metricType>> params_provider_;
     std::weak_ptr<AbstractWorldModel<metricType>> world_;
     std::shared_ptr<aero::AerodynamicsModel> aero_model_;
-    // Cache last computed forces and moments for snapshot augmentation
     mutable Eigen::Vector3<metricType> last_computed_forces_;
     mutable Eigen::Vector3<metricType> last_computed_moments_;
-    // Cache last aerodynamic output for snapshot augmentation
     mutable aero::AeroOutput last_aero_output_;
     mutable metricType last_alpha_;
     mutable metricType last_beta_;
@@ -600,7 +673,7 @@ private:
 
 public:
     explicit FullRocketODE(
-        std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
+        std::shared_ptr<DynamicParametersProvider<metricType>> params_provider,
         std::shared_ptr<AbstractWorldModel<metricType>> world,
         std::shared_ptr<aero::AerodynamicsModel> aero_model
     );
@@ -618,18 +691,17 @@ public:
     ) const override;
 
 private:
-
     metricType computeSpaceAngleOfAttack(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeAerodynamicRollAngle(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeSideslipAngle(const Eigen::Vector3<metricType>& V_body) const;
     metricType computeMachNumber(metricType V_magnitude, const Eigen::Vector3<metricType>& position) const;
     metricType computeAirDensity(const Eigen::Vector3<metricType>& position) const;
-    
+
     Eigen::Vector3<metricType> computeTotalForcesENU(
-    const Eigen::Vector3<metricType>& F_aero_body,
-    const Eigen::Vector3<metricType>& F_thrust_body,
-    metricType mass,
-    const core::math::Matrix3& dcm) const;
+        const Eigen::Vector3<metricType>& F_aero_body,
+        const Eigen::Vector3<metricType>& F_thrust_body,
+        metricType mass,
+        const core::math::Matrix3& dcm) const;
 
     Eigen::Vector3<metricType> computeLinearAccelerationENU(
         const Eigen::Vector3<metricType>& F_sum,
@@ -680,6 +752,56 @@ public:
     ) const = 0;
 
 };
+```
+
+
+### Файл: src\DynamicsSystem\NetProjectile3DOF\NetProjectile3DOF.h
+```cpp
+/*// src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.h
+#pragma once
+#include "../IDynamicsSystem.h"
+#include "../../WorldModel/AbstractWorldModel.h"
+#include "../Aerodynamics/SimplifiedAeroModel.h"
+
+/**
+ * @brief 3DOF-динамика сетевого снаряда (только поступательное движение).
+ *
+ * @details Уравнения:
+ *   dr/dt = V
+ *   dV/dt = (F_aero + F_gravity) / m
+ *
+ * Сетка всегда ориентирована "лицом" к потоку (парашютный эффект).
+ * Нет вращения, моментов, углов Эйлера.
+ #1#
+template<typename metricType>
+class NetProjectile3DOF final : public IDynamicsSystem<metricType> {
+private:
+    //std::weak_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider_;
+    std::weak_ptr<AbstractWorldModel<metricType>> world_;
+    std::shared_ptr<SimplifiedAeroModel<metricType>> aero_model_;
+
+public:
+    explicit NetProjectile3DOF(
+        //std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
+        std::shared_ptr<AbstractWorldModel<metricType>> world,
+        std::shared_ptr<SimplifiedAeroModel<metricType>> aero_model
+    );
+
+    std::string get_description() const override;
+
+    std::unique_ptr<KinematicStateDerivative<metricType>> get_rhs_derivatives(
+        const KinematicState<metricType>& state,
+        metricType t
+    ) override;
+
+    std::unique_ptr<ObjSnapshot<metricType>> augmentSnapshot(
+        const KinematicState<metricType>& state,
+        metricType t
+    ) const override;
+
+private:
+    metricType computeAirDensity(const Eigen::Vector3<metricType>& position) const;
+};*/
 ```
 
 
@@ -1143,7 +1265,7 @@ protected:
 #pragma once
 #include "../../../../../AbstractObject.h"
 #include "../../../../../../utils/ObjInitParams.h"
-#include "../../../../../../utils/IParameterProvider.h"
+#include "../../../../../../utils/ParameterProvider/IParameterProvider.h"
 
 /**
 * \brief Класс реализации ЗУР_1_версия (MANPAD - Man-Portable Air-Defense System)
@@ -1817,68 +1939,6 @@ public:
 ```
 
 
-### Файл: src\utils\DynamicParametersProviderForFullRocketModel.h
-```cpp
-//
-// Created by 4NR_Operator_3 on 12.01.2026.
-//
-
-#pragma once
-#include "PCH.h"
-#include "Interpolation/ComponentInterpolationManager.h"
-
-// Создание системы ОДУ для ракеты с провайдером, который будет хранить в себе
-// getMass(t) getInertia(t) getThrust(t)
-// Аэродинамика теперь обрабатывается отдельной библиотекой aero_simpi
-
-
-// эта тема знает про интерполятор(шаред птр на интерполятор закинуть
-// при создании) но не знает ничего про систему оду(в систему оду она передается
-// и используется но может передаваться куда угодно), эта будет при
-// инициализации сразу иметь доступ к менеджеру интерполяторов
-
-
-//TODO
-// == Убери заглушки!! и тут можно убрать использование простой модели ад автоматически
-
-
-template <typename metricType>
-class DynamicParametersProviderForFullRocketModel {
-private:
-    std::weak_ptr<ComponentInterpolationManager<metricType>> interpolation_manager_;
-
-public:
-    explicit DynamicParametersProviderForFullRocketModel(
-        std::shared_ptr<ComponentInterpolationManager<metricType>> interpolation_manager)
-    : interpolation_manager_(interpolation_manager) {}
-
-    metricType getMass(metricType t) const {
-        auto manager = interpolation_manager_.lock();
-        if (!manager) throw std::runtime_error("Interpolation manager expired");
-        return manager->getMass(t);
-    }
-
-    Eigen::Vector3<metricType> getInertia(metricType t) const {
-        auto manager = interpolation_manager_.lock();
-        if (!manager) throw std::runtime_error("Interpolation manager expired");
-        return manager->getInertia(t);
-    }
-
-    Eigen::Vector3<metricType> getThrust(metricType t) const {
-        auto manager = interpolation_manager_.lock();
-        if (!manager) throw std::runtime_error("Interpolation manager expired");
-        return manager->getThrust(t);
-    }
-
-    [[nodiscard]] Eigen::Vector3<metricType> getCOM(metricType t) const {
-        auto manager = interpolation_manager_.lock();
-        if (!manager) throw std::runtime_error("Interpolation manager expired");
-        return manager->getCOM(t);
-    }
-};
-```
-
-
 ### Файл: src\utils\Interpolation\ComponentInterpolationManager.h
 ```cpp
 //
@@ -1887,7 +1947,7 @@ public:
 
 #pragma once
 #include "PCH.h"
-#include "../IParameterProvider.h"
+#include "../ParameterProvider/IParameterProvider.h"
 #include "ILinearInterpolator/ILinearInterpolator.h"
 #include "IBilinearInterpolator/IBilinearInterpolator.h"
 
@@ -1900,9 +1960,10 @@ public:
  * так что можешь просто добавлять их сюда, всего учесть сразу не могу, вдруг ты
  * захочешь скорость интерполировать)))
  */
-
 template<typename metricType>
-class ComponentInterpolationManager : public IParameterProvider<metricType> {
+class ComponentInterpolationManager final
+    : public IParameterProvider<metricType>
+{
 private:
     // === МАССА И ИНЕРЦИЯ ===
     std::unique_ptr<ILinearInterpolator<metricType>> mass_;
@@ -1915,7 +1976,7 @@ private:
     std::unique_ptr<ILinearInterpolator<metricType>> COM_y_;
     std::unique_ptr<ILinearInterpolator<metricType>> COM_z_;
 
-    // === ТЯГА ОТ ДВИГАТЕЛЕЙ ===
+    // === ТЯГА ===
     std::unique_ptr<ILinearInterpolator<metricType>> thrust_x_;
     std::unique_ptr<ILinearInterpolator<metricType>> thrust_y_;
     std::unique_ptr<ILinearInterpolator<metricType>> thrust_z_;
@@ -1934,22 +1995,24 @@ private:
 
 public:
     ComponentInterpolationManager() = default;
+    ~ComponentInterpolationManager() override = default;
 
-    // ============ УСТАНОВЩИКИ ============
+    // ========================================================================
+    // СЕТТЕРЫ
+    // ========================================================================
 
     void setMass(std::unique_ptr<ILinearInterpolator<metricType>> interp) {
         mass_ = std::move(interp);
     }
 
     void setCOM(
-        std::unique_ptr<ILinearInterpolator<metricType>> x_COM,
-        std::unique_ptr<ILinearInterpolator<metricType>> y_COM,
-        std::unique_ptr<ILinearInterpolator<metricType>> z_COM) {
-        COM_x_ = std::move(x_COM);
-        COM_y_ = std::move(y_COM);
-        COM_z_ = std::move(z_COM);
+        std::unique_ptr<ILinearInterpolator<metricType>> x,
+        std::unique_ptr<ILinearInterpolator<metricType>> y,
+        std::unique_ptr<ILinearInterpolator<metricType>> z) {
+        COM_x_ = std::move(x);
+        COM_y_ = std::move(y);
+        COM_z_ = std::move(z);
     }
-
 
     void setInertia(
         std::unique_ptr<ILinearInterpolator<metricType>> ix,
@@ -1991,27 +2054,21 @@ public:
         a_ck_otn_aero_ = std::move(a_ck_otn);
     }
 
-    // ============ ГЕТТЕРЫ С ПРОВЕРКАМИ ============
-    // Реализация интерфейса IParameterProvider
+    // ========================================================================
+    // РЕАЛИЗАЦИЯ СТАРОГО КОНТРАКТА (для обратной совместимости)
+    // ========================================================================
+
     [[nodiscard]] metricType getMass(metricType t) const override {
-        if (!mass_) throw std::runtime_error("Интерполятор массы не установлен");
+        if (!mass_) {
+            throw std::runtime_error("Интерполятор массы не установлен");
+        }
         return mass_->interpolate(t);
     }
 
-    [[nodiscard]] Eigen::Vector3<metricType> getCOM(metricType t) const override {
-        if (!COM_x_) throw std::runtime_error("Интерполятор COM не установлен");
-        return Eigen::Vector3<metricType>(
-            COM_x_->interpolate(t),
-            COM_y_->interpolate(t),
-            COM_z_->interpolate(t)
-        );
-    }
-
-
-
     [[nodiscard]] Eigen::Vector3<metricType> getInertia(metricType t) const override {
-        if (!inertia_x_ || !inertia_y_ || !inertia_z_)
+        if (!inertia_x_ || !inertia_y_ || !inertia_z_) {
             throw std::runtime_error("Интерполяторы моментов инерции не установлены");
+        }
         return Eigen::Vector3<metricType>(
             inertia_x_->interpolate(t),
             inertia_y_->interpolate(t),
@@ -2020,8 +2077,9 @@ public:
     }
 
     [[nodiscard]] Eigen::Vector3<metricType> getThrust(metricType t) const override {
-        if (!thrust_x_ || !thrust_y_ || !thrust_z_)
+        if (!thrust_x_ || !thrust_y_ || !thrust_z_) {
             throw std::runtime_error("Интерполяторы тяги не установлены");
+        }
         return Eigen::Vector3<metricType>(
             thrust_x_->interpolate(t),
             thrust_y_->interpolate(t),
@@ -2029,22 +2087,103 @@ public:
         );
     }
 
-    metricType getCxAero(metricType alpha, metricType mach) const {
-        if (!cx_aero_) throw std::runtime_error("Интерполятор Cx не установлен");
+    [[nodiscard]] Eigen::Vector3<metricType> getCOM(metricType t) const override {
+        if (!COM_x_ || !COM_y_ || !COM_z_) {
+            throw std::runtime_error("Интерполяторы COM не установлены");
+        }
+        return Eigen::Vector3<metricType>(
+            COM_x_->interpolate(t),
+            COM_y_->interpolate(t),
+            COM_z_->interpolate(t)
+        );
+    }
+
+    // ========================================================================
+    // РЕАЛИЗАЦИЯ НОВОГО КОНТРАКТА (std::optional, без исключений)
+    // ========================================================================
+
+    [[nodiscard]] std::optional<metricType> tryGetMass(metricType t) const override {
+        if (!mass_) {
+            return std::nullopt;
+        }
+        return mass_->interpolate(t);
+    }
+
+    [[nodiscard]] bool hasMass() const override {
+        return mass_ != nullptr;
+    }
+
+    [[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetInertia(metricType t) const override {
+        if (!inertia_x_ || !inertia_y_ || !inertia_z_) {
+            return std::nullopt;
+        }
+        return Eigen::Vector3<metricType>(
+            inertia_x_->interpolate(t),
+            inertia_y_->interpolate(t),
+            inertia_z_->interpolate(t)
+        );
+    }
+
+    [[nodiscard]] bool hasInertia() const override {
+        return inertia_x_ && inertia_y_ && inertia_z_;
+    }
+
+    [[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetThrust(metricType t) const override {
+        if (!thrust_x_ || !thrust_y_ || !thrust_z_) {
+            return std::nullopt;
+        }
+        return Eigen::Vector3<metricType>(
+            thrust_x_->interpolate(t),
+            thrust_y_->interpolate(t),
+            thrust_z_->interpolate(t)
+        );
+    }
+
+    [[nodiscard]] bool hasThrust() const override {
+        return thrust_x_ && thrust_y_ && thrust_z_;
+    }
+
+    [[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetCOM(metricType t) const override {
+        if (!COM_x_ || !COM_y_ || !COM_z_) {
+            return std::nullopt;
+        }
+        return Eigen::Vector3<metricType>(
+            COM_x_->interpolate(t),
+            COM_y_->interpolate(t),
+            COM_z_->interpolate(t)
+        );
+    }
+
+    [[nodiscard]] bool hasCOM() const override {
+        return COM_x_ && COM_y_ && COM_z_;
+    }
+
+    // ========================================================================
+    // АЭРОДИНАМИЧЕСКИЕ МЕТОДЫ (для внутреннего использования)
+    // ========================================================================
+
+    [[nodiscard]] metricType getCxAero(metricType alpha, metricType mach) const {
+        if (!cx_aero_) {
+            throw std::runtime_error("Интерполятор Cx не установлен");
+        }
         return cx_aero_->interpolate(alpha, mach);
     }
 
-    metricType getCyAero(metricType alpha, metricType mach) const {
-        if (!cy_aero_) throw std::runtime_error("Интерполятор Cy не установлен");
+    [[nodiscard]] metricType getCyAero(metricType alpha, metricType mach) const {
+        if (!cy_aero_) {
+            throw std::runtime_error("Интерполятор Cy не установлен");
+        }
         return cy_aero_->interpolate(alpha, mach);
     }
 
-    metricType getCzAero(metricType alpha, metricType mach) const {
-        if (!cz_aero_) throw std::runtime_error("Интерполятор Cz не установлен");
+    [[nodiscard]] metricType getCzAero(metricType alpha, metricType mach) const {
+        if (!cz_aero_) {
+            throw std::runtime_error("Интерполятор Cz не установлен");
+        }
         return cz_aero_->interpolate(alpha, mach);
     }
 
-    Eigen::Vector3<metricType> getAerodynamicForceCoefficients(
+    [[nodiscard]] Eigen::Vector3<metricType> getAerodynamicForceCoefficients(
         metricType alpha, metricType mach) const {
         return Eigen::Vector3<metricType>(
             getCxAero(alpha, mach),
@@ -2053,28 +2192,38 @@ public:
         );
     }
 
-    metricType getCyRAero(metricType alpha, metricType mach) const {
-        if (!cy_r_aero_) throw std::runtime_error("Интерполятор Cy_r не установлен");
+    [[nodiscard]] metricType getCyRAero(metricType alpha, metricType mach) const {
+        if (!cy_r_aero_) {
+            throw std::runtime_error("Интерполятор Cy_r не установлен");
+        }
         return cy_r_aero_->interpolate(alpha, mach);
     }
 
-    metricType getCyKAero(metricType alpha, metricType mach) const {
-        if (!cy_k_aero_) throw std::runtime_error("Интерполятор Cy_k не установлен");
+    [[nodiscard]] metricType getCyKAero(metricType alpha, metricType mach) const {
+        if (!cy_k_aero_) {
+            throw std::runtime_error("Интерполятор Cy_k не установлен");
+        }
         return cy_k_aero_->interpolate(alpha, mach);
     }
 
-    metricType getCyStAero(metricType alpha, metricType mach) const {
-        if (!cy_st_aero_) throw std::runtime_error("Интерполятор Cy_st не установлен");
+    [[nodiscard]] metricType getCyStAero(metricType alpha, metricType mach) const {
+        if (!cy_st_aero_) {
+            throw std::runtime_error("Интерполятор Cy_st не установлен");
+        }
         return cy_st_aero_->interpolate(alpha, mach);
     }
 
-    metricType getXdKAero(metricType alpha, metricType mach) const {
-        if (!xd_k_aero_) throw std::runtime_error("Интерполятор Xd_k не установлен");
+    [[nodiscard]] metricType getXdKAero(metricType alpha, metricType mach) const {
+        if (!xd_k_aero_) {
+            throw std::runtime_error("Интерполятор Xd_k не установлен");
+        }
         return xd_k_aero_->interpolate(alpha, mach);
     }
 
-    metricType getAckOtnAero(metricType alpha, metricType mach) const {
-        if (!a_ck_otn_aero_) throw std::runtime_error("Интерполятор a_ck_otn не установлен");
+    [[nodiscard]] metricType getAckOtnAero(metricType alpha, metricType mach) const {
+        if (!a_ck_otn_aero_) {
+            throw std::runtime_error("Интерполятор a_ck_otn не установлен");
+        }
         return a_ck_otn_aero_->interpolate(alpha, mach);
     }
 };
@@ -2260,46 +2409,6 @@ public:
 };
 
 
-
-```
-
-
-### Файл: src\utils\IParameterProvider.h
-```cpp
-//
-// Created by refactoring on 29.01.2026.
-//
-
-#pragma once
-#include "PCH.h"
-
-/**
- * \brief Интерфейс для провайдера динамических параметров объекта.
- *
- * \tparam metricType Тип данных для метрических величин.
- *
- * \details Абстракция для получения изменяющихся во времени параметров
- * физических объектов: массы, моментов инерции и тяги. Позволяет
- * разорвать циклические зависимости между системами динамики и
- * объектами, применяя принцип инверсии зависимостей (DIP).
- * Поддерживает интерполяцию параметров по времени.
- */
-template<typename metricType>
-class IParameterProvider {
-public:
-    virtual ~IParameterProvider() = default;
-
-    // Получение массы в момент времени t
-    [[nodiscard]] virtual metricType getMass(metricType t) const = 0;
-
-    // Получение моментов инерции в момент времени t
-    [[nodiscard]] virtual Eigen::Vector3<metricType> getInertia(metricType t) const = 0;
-
-    // Получение вектора тяги в момент времени t
-    [[nodiscard]] virtual Eigen::Vector3<metricType> getThrust(metricType t) const = 0;
-
-    [[nodiscard]] virtual Eigen::Vector3<metricType> getCOM(metricType t) const = 0;
-};
 
 ```
 
@@ -2728,6 +2837,378 @@ private:
     metricType aero_mach_;
     metricType aero_x_cp_;
     metricType aero_static_margin_;
+};
+```
+
+
+### Файл: src\utils\ParameterProvider\DynamicParametersProvider.h
+```cpp
+//
+// Created by refactoring on 12.01.2026.
+//
+#pragma once
+#include "IParameterProvider.h"
+#include "PCH.h"
+#include "../Interpolation/ComponentInterpolationManager.h"
+
+/**
+* \brief Провайдер динамических параметров для системы ОДУ ракеты.
+*
+* \tparam metricType Тип данных для метрических величин.
+*
+* \details Агрегирует слабые ссылки на провайдеры массы, инерции, тяги и COM.
+* Предоставляет безопасные методы получения параметров с fallback на значения
+* по умолчанию. Используется в FullRocketODE для получения изменяющихся
+* во времени параметров ракеты без циклических зависимостей.
+*/
+template<typename metricType>
+class DynamicParametersProvider {
+private:
+std::weak_ptr<IMassProvider<metricType>> mass_provider_;
+std::weak_ptr<IInertiaProvider<metricType>> inertia_provider_;
+std::weak_ptr<IThrustProvider<metricType>> thrust_provider_;
+std::weak_ptr<ICOMProvider<metricType>> com_provider_;
+
+// Внутренний хелпер для безопасного вызова через weak_ptr
+// ИСПРАВЛЕНО: корректно обрабатывает std::optional из возвращаемого значения
+template<typename ProviderType, typename ReturnType, typename... Args>
+[[nodiscard]] static ReturnType safeCall(
+    const std::weak_ptr<ProviderType>& weak_ptr,
+    ReturnType (ProviderType::*method)(Args...) const,
+    Args... args) noexcept
+{
+    if (auto p = weak_ptr.lock()) {
+        try {
+            return (p.get()->*method)(args...);
+        } catch (...) {
+            // Возвращаем пустой optional при исключении
+            return ReturnType{};
+        }
+    }
+    // Возвращаем пустой optional при expired weak_ptr
+    return ReturnType{};
+}
+
+public:
+// ========================================================================
+// КОНСТРУКТОР
+// ========================================================================
+DynamicParametersProvider(
+    std::shared_ptr<IMassProvider<metricType>> mass = nullptr,
+    std::shared_ptr<IInertiaProvider<metricType>> inertia = nullptr,
+    std::shared_ptr<IThrustProvider<metricType>> thrust = nullptr,
+    std::shared_ptr<ICOMProvider<metricType>> com = nullptr)
+: mass_provider_(std::move(mass))
+, inertia_provider_(std::move(inertia))
+, thrust_provider_(std::move(thrust))
+, com_provider_(std::move(com)) {}
+
+// ========================================================================
+// БЕЗОПАСНЫЕ ГЕТТЕРЫ С std::optional
+// ========================================================================
+[[nodiscard]] std::optional<metricType> tryGetMass(metricType t) const noexcept {
+    return safeCall(mass_provider_, &IMassProvider<metricType>::tryGetMass, t);
+}
+
+[[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetInertia(metricType t) const noexcept {
+    return safeCall(inertia_provider_, &IInertiaProvider<metricType>::tryGetInertia, t);
+}
+
+[[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetThrust(metricType t) const noexcept {
+    return safeCall(thrust_provider_, &IThrustProvider<metricType>::tryGetThrust, t);
+}
+
+[[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetCOM(metricType t) const noexcept {
+    return safeCall(com_provider_, &ICOMProvider<metricType>::tryGetCOM, t);
+}
+
+// ========================================================================
+// ГЕТТЕРЫ С FALLBACK (удобно для ODE-систем)
+// ========================================================================
+[[nodiscard]] metricType getMass(metricType t, metricType default_value) const noexcept {
+    auto val = tryGetMass(t);
+    return val.has_value() ? val.value() : default_value;
+}
+
+[[nodiscard]] Eigen::Vector3<metricType> getInertia(
+    metricType t, Eigen::Vector3<metricType> default_value) const noexcept {
+    auto val = tryGetInertia(t);
+    return val.has_value() ? val.value() : default_value;
+}
+
+[[nodiscard]] Eigen::Vector3<metricType> getThrust(
+    metricType t, Eigen::Vector3<metricType> default_value) const noexcept {
+    auto val = tryGetThrust(t);
+    return val.has_value() ? val.value() : default_value;
+}
+
+[[nodiscard]] Eigen::Vector3<metricType> getCOM(
+    metricType t, Eigen::Vector3<metricType> default_value) const noexcept {
+    auto val = tryGetCOM(t);
+    return val.has_value() ? val.value() : default_value;
+}
+
+// ========================================================================
+// СТРОГИЕ ГЕТТЕРЫ (бросают, если параметр критичен и отсутствует)
+// ========================================================================
+[[nodiscard]] metricType getMassStrict(metricType t) const {
+    auto val = tryGetMass(t);
+    if (!val) {
+        throw std::logic_error("Mass provider required but not available");
+    }
+    return *val;
+}
+
+[[nodiscard]] Eigen::Vector3<metricType> getInertiaStrict(metricType t) const {
+    auto val = tryGetInertia(t);
+    if (!val) {
+        throw std::logic_error("Inertia provider required but not available");
+    }
+    return *val;
+}
+
+[[nodiscard]] Eigen::Vector3<metricType> getThrustStrict(metricType t) const {
+    auto val = tryGetThrust(t);
+    if (!val) {
+        throw std::logic_error("Thrust provider required but not available");
+    }
+    return *val;
+}
+
+[[nodiscard]] Eigen::Vector3<metricType> getCOMStrict(metricType t) const {
+    auto val = tryGetCOM(t);
+    if (!val) {
+        throw std::logic_error("COM provider required but not available");
+    }
+    return *val;
+}
+
+// ========================================================================
+// ПРОВЕРКИ НАЛИЧИЯ ПРОВАЙДЕРОВ
+// ========================================================================
+[[nodiscard]] bool hasMassProvider() const noexcept {
+    return !mass_provider_.expired();
+}
+
+[[nodiscard]] bool hasInertiaProvider() const noexcept {
+    return !inertia_provider_.expired();
+}
+
+[[nodiscard]] bool hasThrustProvider() const noexcept {
+    return !thrust_provider_.expired();
+}
+
+[[nodiscard]] bool hasCOMProvider() const noexcept {
+    return !com_provider_.expired();
+}
+};
+```
+
+
+### Файл: src\utils\ParameterProvider\IParameterProvider.h
+```cpp
+//
+// Created by refactoring on 29.01.2026.
+//
+#pragma once
+#include "PCH.h"
+
+/**
+* \brief Интерфейс для провайдера динамических параметров объекта.
+*
+* \tparam metricType Тип данных для метрических величин.
+*
+* \details Абстракция для получения изменяющихся во времени параметров
+* физических объектов: массы, моментов инерции и тяги. Позволяет
+* разорвать циклические зависимости между системами динамики и
+* объектами, применяя принцип инверсии зависимостей (DIP).
+* Поддерживает интерполяцию параметров по времени.
+*/
+template<typename metricType>
+class IMassProvider {
+public:
+    [[nodiscard]] virtual std::optional<metricType> tryGetMass(metricType t) const = 0;
+    [[nodiscard]] virtual bool hasMass() const = 0;
+    virtual ~IMassProvider() = default;
+};
+
+template<typename metricType>
+class IInertiaProvider {
+public:
+    [[nodiscard]] virtual std::optional<Eigen::Vector3<metricType>> tryGetInertia(metricType t) const = 0;
+    [[nodiscard]] virtual bool hasInertia() const = 0;
+    virtual ~IInertiaProvider() = default;
+};
+
+template<typename metricType>
+class IThrustProvider {
+public:
+    [[nodiscard]] virtual std::optional<Eigen::Vector3<metricType>> tryGetThrust(metricType t) const = 0;
+    [[nodiscard]] virtual bool hasThrust() const = 0;
+    virtual ~IThrustProvider() = default;
+};
+
+template<typename metricType>
+class ICOMProvider {
+public:
+    [[nodiscard]] virtual std::optional<Eigen::Vector3<metricType>> tryGetCOM(metricType t) const = 0;
+    [[nodiscard]] virtual bool hasCOM() const = 0;
+    virtual ~ICOMProvider() = default;
+};
+
+// === ИСПРАВЛЕНО: убрано virtual, т.к. нет ромбовидного наследования ===
+// ComponentInterpolationManager наследуется ТОЛЬКО от IParameterProvider,
+// не от базовых интерфейсов напрямую → ромба нет → virtual избыточен
+template<typename metricType>
+class IParameterProvider
+: public IMassProvider<metricType>
+, public IInertiaProvider<metricType>
+, public IThrustProvider<metricType>
+, public ICOMProvider<metricType>
+{
+public:
+    // === Старый контракт (бросает исключения) — для обратной совместимости ===
+    [[nodiscard]] virtual metricType getMass(metricType t) const = 0;
+    [[nodiscard]] virtual Eigen::Vector3<metricType> getInertia(metricType t) const = 0;
+    [[nodiscard]] virtual Eigen::Vector3<metricType> getThrust(metricType t) const = 0;
+    [[nodiscard]] virtual Eigen::Vector3<metricType> getCOM(metricType t) const = 0;
+
+    // === Реализация новых интерфейсов через старый контракт ===
+    [[nodiscard]] std::optional<metricType> tryGetMass(metricType t) const override {
+        try { return getMass(t); }
+        catch (...) { return std::nullopt; }
+    }
+    [[nodiscard]] bool hasMass() const override {
+        try { getMass(metricType{0}); return true; }
+        catch (...) { return false; }
+    }
+    [[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetInertia(metricType t) const override {
+        try { return getInertia(t); }
+        catch (...) { return std::nullopt; }
+    }
+    [[nodiscard]] bool hasInertia() const override {
+        try { getInertia(metricType{0}); return true; }
+        catch (...) { return false; }
+    }
+    [[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetThrust(metricType t) const override {
+        try { return getThrust(t); }
+        catch (...) { return std::nullopt; }
+    }
+    [[nodiscard]] bool hasThrust() const override {
+        try { getThrust(metricType{0}); return true; }
+        catch (...) { return false; }
+    }
+    [[nodiscard]] std::optional<Eigen::Vector3<metricType>> tryGetCOM(metricType t) const override {
+        try { return getCOM(t); }
+        catch (...) { return std::nullopt; }
+    }
+    [[nodiscard]] bool hasCOM() const override {
+        try { getCOM(metricType{0}); return true; }
+        catch (...) { return false; }
+    }
+    virtual ~IParameterProvider() = default;
+};
+```
+
+
+### Файл: src\utils\ParameterProvider\ParameterProviderFactory.h
+```cpp
+#pragma once
+#include "PCH.h"
+#include "DynamicParametersProvider.h"
+#include "IParameterProvider.h"
+#include "../Interpolation/ComponentInterpolationManager.h"
+
+template<typename metricType>
+class ParameterProviderFactory {
+public:
+    /**
+     * \brief Создаёт DynamicParametersProvider из менеджера интерполяции
+     * \param manager Менеджер интерполяции (shared_ptr)
+     * \param need_mass Включить провайдер массы
+     * \param need_inertia Включить провайдер инерции
+     * \param need_thrust Включить провайдер тяги
+     * \param need_com Включить провайдер центра масс
+     * \return Настроенный DynamicParametersProvider
+     */
+    [[nodiscard]] static DynamicParametersProvider<metricType> createFromManager(
+        std::shared_ptr<ComponentInterpolationManager<metricType>> manager,
+        bool need_mass = true,
+        bool need_inertia = true,
+        bool need_thrust = true,
+        bool need_com = true) noexcept
+    {
+        std::shared_ptr<IMassProvider<metricType>> mass_ptr = nullptr;
+        std::shared_ptr<IInertiaProvider<metricType>> inertia_ptr = nullptr;
+        std::shared_ptr<IThrustProvider<metricType>> thrust_ptr = nullptr;
+        std::shared_ptr<ICOMProvider<metricType>> com_ptr = nullptr;
+
+        if (manager) {
+            if (need_mass) {
+                mass_ptr = std::static_pointer_cast<IMassProvider<metricType>>(manager);
+            }
+            if (need_inertia) {
+                inertia_ptr = std::static_pointer_cast<IInertiaProvider<metricType>>(manager);
+            }
+            if (need_thrust) {
+                thrust_ptr = std::static_pointer_cast<IThrustProvider<metricType>>(manager);
+            }
+            if (need_com) {
+                com_ptr = std::static_pointer_cast<ICOMProvider<metricType>>(manager);
+            }
+        }
+
+        return DynamicParametersProvider<metricType>(
+            std::move(mass_ptr),
+            std::move(inertia_ptr),
+            std::move(thrust_ptr),
+            std::move(com_ptr)
+        );
+    }
+
+    /**
+     * \brief Создаёт провайдер для "точечной" модели (только масса и COM)
+     * \param manager Менеджер интерполяции
+     * \return DynamicParametersProvider без инерции и тяги
+     */
+    [[nodiscard]] static DynamicParametersProvider<metricType> createPointMass(
+        std::shared_ptr<ComponentInterpolationManager<metricType>> manager) noexcept
+    {
+        return createFromManager(manager, true, false, false, true);
+    }
+
+    /**
+     * \brief Создаёт провайдер для аэродинамической модели (без массы/инерции/тяги)
+     * \param manager Менеджер интерполяции
+     * \return DynamicParametersProvider только с COM
+     */
+    [[nodiscard]] static DynamicParametersProvider<metricType> createAeroOnly(
+        std::shared_ptr<ComponentInterpolationManager<metricType>> manager) noexcept
+    {
+        return createFromManager(manager, false, false, false, true);
+    }
+
+    /**
+     * \brief Создаёт провайдер для полной модели ракеты (все параметры)
+     * \param manager Менеджер интерполяции
+     * \return DynamicParametersProvider со всеми параметрами
+     */
+    [[nodiscard]] static DynamicParametersProvider<metricType> createFullRocket(
+        std::shared_ptr<ComponentInterpolationManager<metricType>> manager) noexcept
+    {
+        return createFromManager(manager, true, true, true, true);
+    }
+
+    /**
+     * \brief Создаёт провайдер для баллистической модели (масса + COM, без тяги/инерции)
+     * \param manager Менеджер интерполяции
+     * \return DynamicParametersProvider для баллистики
+     */
+    [[nodiscard]] static DynamicParametersProvider<metricType> createBallistic(
+        std::shared_ptr<ComponentInterpolationManager<metricType>> manager) noexcept
+    {
+        return createFromManager(manager, true, false, false, true);
+    }
 };
 ```
 
@@ -3166,6 +3647,76 @@ public:
 ```
 
 
+### Файл: src\DynamicsSystem\Aerodynamics\SimplifiedAeroModel.cpp
+```cpp
+// src/DynamicsSystem/Aerodynamics/SimplifiedAeroModel.cpp
+#include "PCH.h"
+#include "SimplifiedAeroModel.h"
+
+template<typename metricType>
+SimplifiedAeroModel<metricType>::SimplifiedAeroModel(
+    std::unique_ptr<ILinearInterpolator<metricType>> cx_before,
+    std::unique_ptr<ILinearInterpolator<metricType>> cx_after,
+    std::unique_ptr<ILinearInterpolator<metricType>> s_ref_interp,
+    metricType deploy_start,
+    metricType deploy_dur
+) : cx_before_(std::move(cx_before)),
+    cx_after_(std::move(cx_after)),
+    s_ref_interp_(std::move(s_ref_interp)),
+    deploy_start_time_(deploy_start),
+    deploy_duration_(deploy_dur)
+{
+    if (!cx_before_ || !cx_after_ || !s_ref_interp_) {
+        throw std::invalid_argument("All interpolators are required");
+    }
+}
+
+template<typename metricType>
+Eigen::Vector3<metricType> SimplifiedAeroModel<metricType>::computeForceENU(
+    const Eigen::Vector3<metricType>& V_enu,
+    metricType rho,
+    metricType t) const
+{
+    const metricType V_mag = V_enu.norm();
+    if (V_mag < metricType(1e-6)) {
+        return Eigen::Vector3<metricType>::Zero();
+    }
+
+    // === ФАЗА РАСКРЫТИЯ [0..1] ===
+    metricType deploy_factor = metricType(0);
+    if (t >= deploy_start_time_) {
+        deploy_factor = std::min(metricType(1),
+            (t - deploy_start_time_) / deploy_duration_);
+    }
+
+    // === УГОЛ АТАКИ (для компактного снаряда) ===
+    // Для сетки после раскрытия alpha не важен — она всегда "лицом" к потоку
+    metricType alpha_deg = metricType(0);
+    if (deploy_factor < metricType(0.99)) {
+        // До раскрытия: alpha = угол между V и осью X (предполагаем, что снаряд летит носом вперёд)
+        alpha_deg = std::atan2(-V_enu.z(), V_enu.x()) * MathConstants::RAD_TO_DEG;
+    }
+
+    // === ИНТЕРПОЛЯЦИЯ Cx ===
+    const metricType Cx_b = cx_before_->interpolate(alpha_deg);
+    const metricType Cx_a = cx_after_->interpolate(metricType(0)); // сетка: alpha=0
+    const metricType Cx = Cx_b + deploy_factor * (Cx_a - Cx_b);
+
+    // === ПЛОЩАСТЬ ИЗ ТАБЛИЦЫ ===
+    const metricType S_ref = s_ref_interp_->interpolate(t);
+
+    // === ДИНАМИЧЕСКОЕ ДАВЛЕНИЕ ===
+    const metricType q_dyn = metricType(0.5) * rho * V_mag * V_mag;
+
+    // === СИЛА: направлена ПРОТИВ скорости в ENU ===
+    // F = -Cx * q * S * (V_normalized)
+    return -Cx * q_dyn * S_ref * (V_enu / V_mag);
+}
+
+template class SimplifiedAeroModel<GLOBAL_CONFIG::PROJECT_TYPE>;
+```
+
+
 ### Файл: src\DynamicsSystem\FullRocketODE\FullRocketODE.cpp
 ```cpp
 #include "PCH.h"
@@ -3173,17 +3724,20 @@ public:
 
 template <typename metricType>
 FullRocketODE<metricType>::FullRocketODE(
-    const std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
-    const std::shared_ptr<AbstractWorldModel<metricType>> world,
+    std::shared_ptr<DynamicParametersProvider<metricType>> params_provider,
+    std::shared_ptr<AbstractWorldModel<metricType>> world,
     std::shared_ptr<aero::AerodynamicsModel> aero_model
 )
     : params_provider_(params_provider),
       world_(world),
       aero_model_(std::move(aero_model)),
       last_computed_forces_(Eigen::Vector3<metricType>::Zero()),
-      last_computed_moments_(Eigen::Vector3<metricType>::Zero())
+      last_computed_moments_(Eigen::Vector3<metricType>::Zero()),
+      last_alpha_{0},
+      last_beta_{0},
+      last_mach_{0}
 {
-    if (params_provider_.expired()) {
+    if (!params_provider) {
         throw std::invalid_argument("Parameters provider cannot be null");
     }
     if (!aero_model_) {
@@ -3206,40 +3760,38 @@ std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>:
         throw std::runtime_error("DynamicParametersProvider уже был уничтожен");
     }
 
-    metricType mass = params_provider->getMass(t);
-    auto inertia = params_provider->getInertia(t);
+    // === Получение параметров ===
+    // Масса и инерция критичны — используем Strict
+    metricType mass = params_provider->getMassStrict(t);
+    auto inertia = params_provider->getInertiaStrict(t);
+
+    // Тяга и COM могут отсутствовать — используем fallback на ноль
+    auto thrust_body = params_provider->getThrust(t, Eigen::Vector3<metricType>::Zero());
+    auto COM = params_provider->getCOM(t, Eigen::Vector3<metricType>::Zero());
 
     const auto& V_ENU = state.getVelocity();
     const auto& euler = state.getEulerAngles();
-    
-    // euler(0) = psi (yaw), euler(1) = theta (pitch) , euler(2) = gamma (roll)
+
     auto euler_angles = core::math::EulerAngles::ZYX(euler(0), euler(1), euler(2));
     const auto dcm = core::math::eulerToDCM(euler_angles, core::math::CoordinateFrame::ENU);
     auto V_body = core::math::rotateVector(V_ENU, dcm, core::math::CoordinateFrame::ENU, false);
 
-
-
-
     const auto& angularVelocity = state.getAngularVelocity();
-    
-    // Prepare aerodynamic state
+
     metricType V_magnitude = V_body.norm();
     metricType alpha_p = computeSpaceAngleOfAttack(V_body);
-    metricType phi_p = computeAerodynamicRollAngle(V_body);
+    [[maybe_unused]] metricType phi_p = computeAerodynamicRollAngle(V_body);
     metricType mach = computeMachNumber(V_magnitude, state.getPosition());
     metricType rho = computeAirDensity(state.getPosition());
     metricType beta_p = computeSideslipAngle(V_body);
 
+    metricType alpha_deg = alpha_p * 180.0 / MathConstants::PI;
+    metricType beta_deg = beta_p * 180.0 / MathConstants::PI;
 
-    // Convert to degrees for aero library
-    metricType alpha_deg = alpha_p * 180.0 / M_PI;
-    metricType beta_deg = beta_p * 180.0 / M_PI;
-
-    // Сохраняем для snapshot
     last_alpha_ = alpha_deg;
     last_beta_ = beta_deg;
     last_mach_ = mach;
-    
+
     aero::AeroState aero_state;
     aero_state.V = static_cast<double>(V_magnitude);
     aero_state.alpha = static_cast<double>(alpha_deg);
@@ -3250,34 +3802,20 @@ std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>:
     aero_state.rho = static_cast<double>(rho);
     aero_state.M = static_cast<double>(mach);
     aero_state.dt = static_cast<double>(0.1);
-    auto COM = params_provider->getCOM(t);
     aero_state.x_com = static_cast<double>(COM[0]);
     aero_state.y_com = static_cast<double>(COM[1]);
     aero_state.z_com = static_cast<double>(COM[2]);
 
-
-
-
-
-
     aero::AeroOutput aero_output;
     try {
         aero_output = aero_model_->calculate(aero_state);
-        last_aero_output_ = aero_output;  // Сохраняем для snapshot
+        last_aero_output_ = aero_output;
     } catch (const aero::AeroException& e) {
-        // Handle aerodynamic calculation errors gracefully
         std::cerr << "Aerodynamic calculation error: " << e.what() << std::endl;
-        aero_output = aero::AeroOutput{}; // Use zero coefficients
+        aero_output = aero::AeroOutput{};
         last_aero_output_ = aero_output;
     }
 
-
-
-
-
-
-
-    // Convert aerodynamic coefficients to forces and moments in body frame
     const auto& config = aero_model_->getConfig();
     auto [aero_forces_body_vec, aero_moments_body_vec] = aero_output.getForcesAndMoments(
         config.global.S_ref,
@@ -3287,7 +3825,6 @@ std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>:
         static_cast<double>(rho)
     );
 
-    // Convert from Eigen::Vector3d to Eigen::Vector3<metricType>
     Eigen::Vector3<metricType> aero_forces_body(
         static_cast<metricType>(aero_forces_body_vec(0)),
         static_cast<metricType>(aero_forces_body_vec(1)),
@@ -3300,12 +3837,6 @@ std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>:
         static_cast<metricType>(aero_moments_body_vec(2))
     );
 
-
-
-
-    auto thrust_body = params_provider->getThrust(t);
-    
-    // Compute total forces and moments
     auto F_sum_ENU = computeTotalForcesENU(aero_forces_body, thrust_body, mass, dcm);
     last_computed_forces_ = F_sum_ENU;
     last_computed_moments_ = aero_moments_body;
@@ -3313,101 +3844,46 @@ std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>:
     auto dV_ENU = computeLinearAccelerationENU(F_sum_ENU, mass);
     auto dEuler_dt = computeEulerAnglesDerivatives(euler, angularVelocity);
 
+    const metricType q_dyn = static_cast<metricType>(0.5 * rho * V_magnitude * V_magnitude);
 
-
-                           // === ВСТАВИТЬ ПОСЛЕ aero_model_->calculate(aero_state) ===
-                        const metricType q_dyn = static_cast<metricType>(0.5 * rho * V_magnitude * V_magnitude);
-
-                        std::cerr << "=== AERO DEBUG t=" << t << " ===" << std::endl;
-                        std::cerr << "V_body: [" << V_body.transpose() << "]" << std::endl;
-                        std::cerr << "alpha_deg=" << alpha_deg << ", beta_deg=" << beta_deg << std::endl;
-                        std::cerr << "Mach=" << mach << ", rho=" << rho << ", q_dyn=" << q_dyn << std::endl;
-                        std::cerr << "Cz=" << aero_output.Cz << ", my=" << aero_output.my << std::endl;
-                        std::cerr << "x_cp=" << aero_output.x_cp << ", x_com=" << COM[0] << std::endl;
-                        std::cerr << "arm_x=" << (aero_output.x_cp - COM[0]) << std::endl;
-                        std::cerr << "static_margin=" << aero_output.static_margin << std::endl;
-
-                        // КРИТИЧЕСКИ ВАЖНО: проверка знака dmy_dalpha
-                        std::cerr << "\n--- STATIC DERIVATES ---" << std::endl;
-                        std::cerr << "dmy_dalpha=" << aero_output.dmy_dalpha
-                                  << " (sign vs alpha: " << (aero_output.dmy_dalpha * alpha_deg < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
-                        std::cerr << "dCz_dalpha=" << aero_output.dCz_dalpha << std::endl;
-
-                        // Демпфирование
-                        std::cerr << "\n--- DYNAMIC DERIVATES ---" << std::endl;
-                        std::cerr << "dmy_dq=" << aero_output.dmy_dq
-                                  << " (sign: " << (aero_output.dmy_dq < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
-                        std::cerr << "dmx_dp=" << aero_output.dmx_dp
-                                  << " (sign: " << (aero_output.dmx_dp < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
-                        std::cerr << "dmz_dr=" << aero_output.dmz_dr
-                                  << " (sign: " << (aero_output.dmz_dr < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
-
-                        // Проверка вкладов демпфирования в моменты
-                        const metricType damp_my = static_cast<metricType>(aero_output.dmy_dq * angularVelocity(1))
-                            * q_dyn * config.global.S_ref * config.global.c_ref;
-                        const metricType damp_mx = static_cast<metricType>(aero_output.dmx_dp * angularVelocity(0))
-                            * q_dyn * config.global.S_ref * config.global.b_ref;
-                        const metricType damp_mz = static_cast<metricType>(aero_output.dmz_dr * angularVelocity(2))
-                            * q_dyn * config.global.S_ref * config.global.b_ref;
-
-                        std::cerr << "\n--- DEMPH INPUT ---" << std::endl;
-                        std::cerr << "damp_my=" << damp_my << " (against q: "
-                                  << (damp_my * angularVelocity(1) < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
-                        std::cerr << "damp_mx=" << damp_mx << " (against p: "
-                                  << (damp_mx * angularVelocity(0) < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
-                        std::cerr << "damp_mz=" << damp_mz << " (against r: "
-                                  << (damp_mz * angularVelocity(2) < 0 ? "OK ✓" : "FAIL ❌") << ")" << std::endl;
-
-                        std::cerr << "\nangularVelocity: [" << angularVelocity.transpose() << "]" << std::endl;
-                        std::cerr << "==================" << std::endl;
-
-
-    // Pitch damping (тангаж)
+    // Pitch damping
     aero_moments_body(1) += static_cast<metricType>(aero_output.dmy_dq * angularVelocity(1))
                             * q_dyn * config.global.S_ref * config.global.c_ref;
-
-    // Yaw damping (рыскание)
+    // Yaw damping
     aero_moments_body(2) += static_cast<metricType>(aero_output.dmz_dr * angularVelocity(2))
                             * q_dyn * config.global.S_ref * config.global.b_ref;
-
-    // Roll damping (крен)
+    // Roll damping
     aero_moments_body(0) += static_cast<metricType>(aero_output.dmx_dp * angularVelocity(0))
                             * q_dyn * config.global.S_ref * config.global.b_ref;
 
-
-
     auto dAngularVelocity_dt = computeAngularAccelerationBody(aero_moments_body, inertia, angularVelocity);
 
-    /*
-    std::cerr << "DEBUG: alpha=" << alpha_deg
-          << ", Cz=" << aero_output.Cz
-          << ", my=" << aero_output.my
-          << ", x_cp=" << (aero_output.x_cp)
-          << ", static_margin=" << aero_output.static_margin << std::endl;
-          */
-
     return std::make_unique<KinematicStateDerivative<metricType>>(
-            V_ENU,  // dPosition/dt = Velocity
-            dV_ENU,               // dVelocity/dt = Acceleration
-            dEuler_dt,              // dEuler/dt
-            dAngularVelocity_dt          // dАngularVelocity/dt
+            V_ENU,
+            dV_ENU,
+            dEuler_dt,
+            dAngularVelocity_dt
     );
-
-
 }
 
 template <typename metricType>
 std::unique_ptr<ObjSnapshot<metricType>> FullRocketODE<metricType>::augmentSnapshot(
-    const KinematicState<metricType>& kinematics,
+    const KinematicState<metricType>& state,
     metricType t
 ) const {
     auto params_provider = params_provider_.lock();
-    if (!params_provider) {throw std::runtime_error("DynamicParametersProvider expired in augmentSnapshot");}
+    if (!params_provider) {
+        throw std::runtime_error("DynamicParametersProvider expired in augmentSnapshot");
+    }
 
-    return ObjSnapshot<metricType>::createBuilder(kinematics)
+    // Безопасное получение с fallback на ноль для snapshot
+    auto mass = params_provider->tryGetMass(t).value_or(metricType{0});
+    auto inertia = params_provider->tryGetInertia(t).value_or(Eigen::Vector3<metricType>::Zero());
+
+    return ObjSnapshot<metricType>::createBuilder(state)
         .setTime(t)
-        .setMass(params_provider->getMass(t))
-        .setInertia(params_provider->getInertia(t))
+        .setMass(mass)
+        .setInertia(inertia)
         .setTotalForce(last_computed_forces_)
         .setTotalMoment(last_computed_moments_)
         .setAeroCx(static_cast<metricType>(last_aero_output_.Cx))
@@ -3421,18 +3897,13 @@ std::unique_ptr<ObjSnapshot<metricType>> FullRocketODE<metricType>::augmentSnaps
         .setAeroMach(last_mach_)
         .setAeroXcp(static_cast<metricType>(last_aero_output_.x_cp))
         .setAeroStaticMargin(static_cast<metricType>(last_aero_output_.static_margin))
-            .buildUnique();
+        .buildUnique();
 }
-
-
-
 
 template <typename metricType>
 metricType FullRocketODE<metricType>::computeSpaceAngleOfAttack(const Eigen::Vector3<metricType>& V_body) const {
     metricType v_x = V_body(0);
     metricType v_z = V_body(2);
-
-    // Защита от деления на ноль
     if (std::abs(v_x) < 1e-6) {
         return (v_z > 0) ? (MathConstants::PI/2) : -(MathConstants::PI/2);
     }
@@ -3440,16 +3911,12 @@ metricType FullRocketODE<metricType>::computeSpaceAngleOfAttack(const Eigen::Vec
 }
 
 template <typename metricType>
-metricType FullRocketODE<metricType>::computeSideslipAngle(
-    const Eigen::Vector3<metricType>& V_body) const {
-
+metricType FullRocketODE<metricType>::computeSideslipAngle(const Eigen::Vector3<metricType>& V_body) const {
     metricType v_x = V_body(0);
     metricType v_y = V_body(1);
-
     if (std::abs(v_x) < 1e-6) {
         return (v_y > 0) ? (MathConstants::PI/2) : -(MathConstants::PI/2);
     }
-
     return std::atan2(v_y, v_x);
 }
 
@@ -3477,15 +3944,10 @@ metricType FullRocketODE<metricType>::computeAirDensity(const Eigen::Vector3<met
     if (!world || !world->getAtmosphericModel()) {
         throw std::runtime_error("World or atmospheric model not available");
     }
-    
     metricType rho = world->getAtmosphericModel()->getDensity(position);
-    
-    // Если плотность <= 0 (например, ракета ушла за пределы модели или врезалась в землю),
-    // используем плотность на уровне моря для избежания ошибок в аэродинамике
     if (rho <= 0.0) {
         rho = static_cast<metricType>(PhysicsConstants::rho0);
     }
-    
     return rho;
 }
 
@@ -3496,14 +3958,9 @@ Eigen::Vector3<metricType> FullRocketODE<metricType>::computeTotalForcesENU(
     metricType mass,
     const core::math::Matrix3& dcm) const
 {
-    // Gravity force in ENU (Z up -> -mg)
     Eigen::Vector3<metricType> gravity_ENU(0, 0, -mass * PhysicsConstants::g);
-
-    // Transform aerodynamic and thrust forces from body to ENU
     auto F_aero_ENU = core::math::rotateVector(F_aero_body, dcm, core::math::CoordinateFrame::ENU, true);
     auto F_thrust_ENU = core::math::rotateVector(F_thrust_body, dcm, core::math::CoordinateFrame::ENU, true);
-
-    // Sum all forces in ENU
     return F_aero_ENU + F_thrust_ENU + gravity_ENU;
 }
 
@@ -3512,11 +3969,7 @@ Eigen::Vector3<metricType> FullRocketODE<metricType>::computeLinearAccelerationE
     const Eigen::Vector3<metricType>& F_sum,
     metricType mass) const
 {
-    Eigen::Vector3<metricType> dV_dt;
-    dV_dt(0) = F_sum(0) / mass;
-    dV_dt(1) = F_sum(1) / mass;
-    dV_dt(2) = F_sum(2) / mass;
-    return dV_dt;
+    return F_sum / mass;
 }
 
 template <typename metricType>
@@ -3524,33 +3977,26 @@ Eigen::Vector3<metricType> FullRocketODE<metricType>::computeEulerAnglesDerivati
     const Eigen::Vector3<metricType>& euler,
     const Eigen::Vector3<metricType>& angularVelocity) const
 {
-    // Use FlightMath library function for Euler rate computation in ENU coordinates
-    // euler(0) = psi (yaw), euler(1) = theta (pitch), euler(2) = gamma (roll)
     auto euler_angles = core::math::EulerAngles::ZYX(euler(0), euler(1), euler(2));
-    
-    // Convert angular velocity to Euler rates using FlightMath function
-    // This replaces manual matrix math with library function
-    auto dEuler_dt = core::math::angularVelocityToEulerRates(
-        euler_angles, 
-        angularVelocity, 
+    return core::math::angularVelocityToEulerRates(
+        euler_angles,
+        angularVelocity,
         core::math::CoordinateFrame::ENU
     );
-    
-    return dEuler_dt;
 }
 
 template <typename metricType>
 Eigen::Vector3<metricType> FullRocketODE<metricType>::computeAngularAccelerationBody(
     const Eigen::Vector3<metricType>& M_sum,
     const Eigen::Vector3<metricType>& inertia,
-    const Eigen::Vector3<metricType>& omega) const
+    const Eigen::Vector3<metricType>& angularVelocity) const
 {
     metricType I_x = inertia(0);
     metricType I_y = inertia(1);
     metricType I_z = inertia(2);
-    metricType w_x = omega(0);
-    metricType w_y = omega(1);
-    metricType w_z = omega(2);
+    metricType w_x = angularVelocity(0);
+    metricType w_y = angularVelocity(1);
+    metricType w_z = angularVelocity(2);
     metricType M_x = M_sum(0);
     metricType M_y = M_sum(1);
     metricType M_z = M_sum(2);
@@ -3564,6 +4010,117 @@ Eigen::Vector3<metricType> FullRocketODE<metricType>::computeAngularAcceleration
 
 // Explicit template instantiation
 template class FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>;
+```
+
+
+### Файл: src\DynamicsSystem\NetProjectile3DOF\NetProjectile3DOF.cpp
+```cpp
+/*// src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.cpp
+#include "PCH.h"
+#include "NetProjectile3DOF.h"
+
+template<typename metricType>
+NetProjectile3DOF<metricType>::NetProjectile3DOF(
+    std::shared_ptr<DynamicParametersProviderForFullRocketModel<metricType>> params_provider,
+    std::shared_ptr<AbstractWorldModel<metricType>> world,
+    std::shared_ptr<SimplifiedAeroModel<metricType>> aero_model
+) : params_provider_(params_provider),
+    world_(world),
+    aero_model_(std::move(aero_model))
+{
+    if (params_provider_.expired() || !aero_model_) {
+        throw std::invalid_argument("Parameters provider and aero model are required");
+    }
+}
+
+template<typename metricType>
+std::string NetProjectile3DOF<metricType>::get_description() const {
+    return "Net Projectile 3DOF (translational only, net faces flow)";
+}
+
+template<typename metricType>
+std::unique_ptr<KinematicStateDerivative<metricType>>
+NetProjectile3DOF<metricType>::get_rhs_derivatives(
+    const KinematicState<metricType>& state,
+    metricType t)
+{
+    auto params_provider = params_provider_.lock();
+    if (!params_provider) {
+        throw std::runtime_error("Parameters provider expired");
+    }
+
+    const auto& V_enu = state.getVelocity();
+    const auto& position = state.getPosition();
+
+    // === ПАРАМЕТРЫ ===
+    metricType mass = params_provider->getMass(t);
+    metricType rho = computeAirDensity(position);
+
+    // === АЭРОДИНАМИЧЕСКАЯ СИЛА (в ENU) ===
+    Eigen::Vector3<metricType> F_aero = aero_model_->computeForceENU(V_enu, rho, t);
+
+    // === ГРАВИТАЦИЯ (ENU: Z up) ===
+    Eigen::Vector3<metricType> F_gravity(0, 0, -mass * PhysicsConstants::g);
+
+    // === УСКОРЕНИЕ ===
+    Eigen::Vector3<metricType> F_total = F_aero + F_gravity;
+    Eigen::Vector3<metricType> dV_dt = F_total / mass;
+
+    // === ПРОИЗВОДНЫЕ (3DOF: только позиция и скорость) ===
+    // Углы и угловая скорость не меняются (константы)
+    return std::make_unique<KinematicStateDerivative<metricType>>(
+        V_enu,                                    // dPosition/dt
+        dV_dt,                                    // dVelocity/dt
+        Eigen::Vector3<metricType>::Zero(),       // dEuler/dt = 0
+        Eigen::Vector3<metricType>::Zero()        // dAngularVelocity/dt = 0
+    );
+}
+
+template<typename metricType>
+std::unique_ptr<ObjSnapshot<metricType>>
+NetProjectile3DOF<metricType>::augmentSnapshot(
+    const KinematicState<metricType>& kinematics,
+    metricType t) const
+{
+    auto params_provider = params_provider_.lock();
+    if (!params_provider) {
+        throw std::runtime_error("Parameters provider expired");
+    }
+
+    // Для 3DOF: моменты = 0, углы = константы
+    return ObjSnapshot<metricType>::createBuilder(kinematics)
+        .setTime(t)
+        .setMass(params_provider->getMass(t))
+        .setInertia(Eigen::Vector3<metricType>::Zero())  // не используется
+        .setTotalForce(Eigen::Vector3<metricType>::Zero()) // можно вычислить, если нужно
+        .setTotalMoment(Eigen::Vector3<metricType>::Zero())
+        .setAeroCx(metricType(0))   // можно добавить вывод Cx, если нужно
+        .setAeroCy(metricType(0))
+        .setAeroCz(metricType(0))
+        .setAeroMx(metricType(0))
+        .setAeroMy(metricType(0))
+        .setAeroMz(metricType(0))
+        .setAeroAlpha(metricType(0))
+        .setAeroBeta(metricType(0))
+        .setAeroMach(metricType(0))
+        .setAeroXcp(metricType(0))
+        .setAeroStaticMargin(metricType(0))
+        .buildUnique();
+}
+
+template<typename metricType>
+metricType NetProjectile3DOF<metricType>::computeAirDensity(
+    const Eigen::Vector3<metricType>& position) const
+{
+    auto world = world_.lock();
+    if (!world || !world->getAtmosphericModel()) {
+        return PhysicsConstants::rho0;
+    }
+    metricType rho = world->getAtmosphericModel()->getDensity(position);
+    return (rho > metricType(0)) ? rho : PhysicsConstants::rho0;
+}
+
+template class NetProjectile3DOF<GLOBAL_CONFIG::PROJECT_TYPE>;*/
 ```
 
 
@@ -4715,7 +5272,7 @@ std::pair<metricType, metricType> NoWindModel<metricType>::getWindDirection( Eig
   "data_saver": "txt",
   "earth_type": "flat earth",
   "time_step": 0.01,
-  "max_time": 5.0,
+  "max_time": 15.0,
   "output_csv": "../data/output/results_data/simulation_data.csv",
 
   "thrust_x": "../data/input/dataTables/golubka_V1/Thrusts/Thrust_x_t.txt",
