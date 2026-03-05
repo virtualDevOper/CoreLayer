@@ -143,10 +143,11 @@ std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>:
     auto dV_ENU = computeLinearAccelerationENU(F_sum_ENU, mass);
     auto dEuler_dt = computeEulerAnglesDerivatives(euler, angularVelocity);
 
+    const metricType q_dyn = static_cast<metricType>(0.5 * rho * V_magnitude * V_magnitude);
 
 
+                           /*
                            // === ВСТАВИТЬ ПОСЛЕ aero_model_->calculate(aero_state) ===
-                        const metricType q_dyn = static_cast<metricType>(0.5 * rho * V_magnitude * V_magnitude);
 
                         std::cerr << "=== AERO DEBUG t=" << t << " ===" << std::endl;
                         std::cerr << "V_body: [" << V_body.transpose() << "]" << std::endl;
@@ -190,6 +191,7 @@ std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>:
 
                         std::cerr << "\nangularVelocity: [" << angularVelocity.transpose() << "]" << std::endl;
                         std::cerr << "==================" << std::endl;
+                        */
 
 
     // Pitch damping (тангаж)

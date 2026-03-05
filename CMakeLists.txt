@@ -91,6 +91,10 @@ add_executable(CoreLayer main.cpp
         include/aero_simpi/src/component.cpp
         include/aero_simpi/src/model.cpp
         include/aero_simpi/src/parser.cpp
+        src/DynamicsSystem/Aerodynamics/SimplifiedAeroModel.cpp
+        src/DynamicsSystem/Aerodynamics/SimplifiedAeroModel.h
+        src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.cpp
+        src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.h
 )
 
 
