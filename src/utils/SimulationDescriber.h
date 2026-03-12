@@ -16,7 +16,8 @@ struct SimulationDescriber {
     std::string earth_type{"undefined"};
     std::vector<std::string> simulation_objects{};
 
-    explicit SimulationDescriber(int utc_offset);
+    //SimulationDescriber();
+    void set_offcet(const int utc_offset);
 
     // Методы для установки значений извне
     void setOperatorName(const std::string& name);

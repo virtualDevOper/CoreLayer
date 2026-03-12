@@ -3,9 +3,7 @@
 //
 
 #pragma once
-
 #include "IObjectManager.h"
-
 
 /**
  * \brief Класс для отслеживания динамических объектов
@@ -16,57 +14,66 @@
  * этот класс отслеживает жизненный цикл объектов и имеет ссылки на них(а вот то, что внутри абстрактного ЛА - уже в ЛА смотри).
  * Скорее всего в ЛА будет решаться задача динамики полета с датчиков, так что смотри по ситуации.
  */
-template <typename metricType>
+
+template<typename metricType>
 class ObjectManager final : public IObjectManager<metricType> {
 private:
     std::unordered_map<int, std::shared_ptr<AbstractObject<metricType>>> all_objects_;
-    std::atomic<uint64_t> next_id_{0};  // Изменено: uint64_t для предотвращения переполнения
-    mutable std::mutex mutex_; // mutable позволяет изменение члена класса даже в константных функциях-членах(пенисах)
-
+    mutable std::mutex mutex_;
 
 public:
     ObjectManager() = default;
-    ObjectManager(const ObjectManager&) = delete;
+    ~ObjectManager() override = default;
 
-    ObjectManager& operator=(const ObjectManager&) = delete;
-
-
-    int addTrackedObject(std::shared_ptr<AbstractObject<metricType>> object) override {
+    int addTrackedObject(
+        std::shared_ptr<AbstractObject<metricType>> object,
+        int id
+    ) override {
         std::lock_guard<std::mutex> lock(mutex_);
-        int id = next_id_++;
+
+        // Проверяем, не занят ли уже этот ID
+        if (all_objects_.contains(id)) {
+            throw std::runtime_error(
+                "ObjectManager: cannot add object with ID " + std::to_string(id) +
+                " — ID already occupied"
+            );
+        }
+
         all_objects_.emplace(id, std::move(object));
         return id;
     }
 
     std::shared_ptr<AbstractObject<metricType>> getObjectByID(int id) const override {
-        std::lock_guard lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_);
         auto it = all_objects_.find(id);
-        return (it != all_objects_.end()) ? it->second : nullptr;
+        if (it != all_objects_.end()) {
+            return it->second;
+        }
+        return nullptr;
     }
 
-    bool removeObjectById(int id) override {
-        std::lock_guard lock(mutex_);
+    std::unordered_map<int, std::weak_ptr<AbstractObject<metricType>>> getAllObjects() const override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::unordered_map<int, std::weak_ptr<AbstractObject<metricType>>> result;
+        result.reserve(all_objects_.size());
+        for (const auto& [id, obj] : all_objects_) {
+            result.emplace(id, obj);
+        }
+        return result;
+    }
+
+    bool removeObject(int id) override {
+        std::lock_guard<std::mutex> lock(mutex_);
         return all_objects_.erase(id) > 0;
     }
 
+    bool hasObject(int id) const override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return all_objects_.count(id) > 0;
+    }
+
     size_t getObjectCount() const override {
-        std::lock_guard lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_);
         return all_objects_.size();
-    }
-
-    void clearAllObjects() override {
-        std::lock_guard lock(mutex_);
-        all_objects_.clear();
-    }
-
-    // Получение всех объектов для решателя
-    std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> getAllObjects() const override {
-        std::lock_guard lock(mutex_);
-        std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> objects;
-        objects.reserve(all_objects_.size());
-        for (const auto& [id, obj] : all_objects_) {
-            objects.emplace_back(id, obj);
-        }
-        return objects;
     }
 };

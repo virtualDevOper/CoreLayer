@@ -1,5 +1,5 @@
 # CoreLayer - Полный код проекта
-# Сгенерировано: 2026-03-05 12:49:32
+# Сгенерировано: 2026-03-12 09:25:19
 # ==========================================
 
 
@@ -32,6 +32,104 @@
 #include "include/aero_simpi/aerodynamics.h"
 #include "src/utils/Interpolation/ComponentInterpolationManager.h"
 
+
+using json = nlohmann::json;
+
+
+
+
+
+/*int main() {
+    try {
+        // === 1. ЗАГРУЗКА И ВАЛИДАЦИЯ ===
+        auto config = SimulationConfig::loadFromJsonFile("../config/simulation.json");
+        Factories::validateConfig(config);
+
+        // === 2. ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ ===
+        Factories::loggerSetup(
+            config.value("logger_type", "both").get<std::string>(),
+            config.value("log_dir", "../logs").get<std::string>()
+        );
+
+        auto world = Factories::createWorld<GLOBAL_CONFIG::PROJECT_TYPE>(
+            config.at("world_config").get<std::string>()
+        );
+
+        auto manager = Factories::createManager<GLOBAL_CONFIG::PROJECT_TYPE>(
+            "Standard Manager", config
+        );
+
+        auto describer = Factories::createDescriber(
+            config.value("describer", "Simple Describer").get<std::string>(),
+            config, 3
+        );
+
+        auto data_saver = Factories::createDataSaver<GLOBAL_CONFIG::PROJECT_TYPE>(
+            config.at("data_saver").get<std::string>(), config
+        );
+
+        using CallbackType = GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE<
+            IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>
+        >;
+        auto solver = Factories::createSolver<CallbackType>(
+            config.at("ode_solver").get<std::string>(), config
+        );
+
+        // === 3. СОЗДАНИЕ ОБЪЕКТОВ С ЯВНЫМИ ID ===
+        for (const auto& device_cfg : config.at("devices")) {
+            const int device_id = device_cfg.at("id").get<int>();
+
+            auto device = Factories::createObject<GLOBAL_CONFIG::PROJECT_TYPE>(
+                device_cfg.at("name").get<std::string>(),
+                device_cfg,
+                world
+            );
+
+            // Явно передаём ID — никаких автогенераций
+            manager->addTrackedObject(std::move(device), device_id);
+        }
+
+        // === 4. ПОДГОТОВКА ОПИСАТЕЛЯ ===
+        {
+            const auto all_objects = manager->getAllObjects();
+            std::vector<int> ids;
+            ids.reserve(all_objects.size());
+            for (const auto& [id, _] : all_objects) ids.push_back(id);
+            describer->setSimulationObjects(ids);
+        }
+
+        // === 5. КОЛБЕК ОСТАНОВКИ ===
+        if (!config.contains("stop_conditions")) {
+            throw std::runtime_error("Missing 'stop_conditions' in config");
+        }
+
+        auto stop_callback = Factories::createStopCallback<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>(
+            config["stop_conditions"],
+            manager
+        );
+
+        // === 6. ЗАПУСК ===
+        IModel<GLOBAL_CONFIG::PROJECT_TYPE, CallbackType> model(
+            std::move(solver),
+            world,
+            std::move(data_saver),
+            std::move(describer),
+            manager,
+            std::move(stop_callback),
+            config.at("time_step").get<GLOBAL_CONFIG::PROJECT_TYPE>()
+        );
+
+        model.run();
+        return 0;
+
+    } catch (const std::exception& e) {
+        if (Logger::isInitialized())
+            Logger::getInstance().error("Main error: " + std::string(e.what()));
+        std::cerr << "FATAL: " << e.what() << std::endl;
+        return 1;
+    }
+}*/
+
 auto loadDataTable = [](const std::string& filename) {
     try {
         auto loader = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>(filename);
@@ -44,10 +142,13 @@ auto loadDataTable = [](const std::string& filename) {
 
 int main() {
     try {
+        auto log_dir = "../logs";
+        Logger::getInstance().configure(true,true,log_dir);
         // === ШАГ 0: ЗАГРУЗКА КОНФИГУРАЦИИ ===
         auto config = SimulationConfig::loadFromJsonFile("../config/simulation.json");
 
-        // Ресурс-менеджер для автоматического освобождения памяти
+
+
         struct ResourceManager {
             std::shared_ptr<SimpleWorld<GLOBAL_CONFIG::PROJECT_TYPE>> world;
             std::unique_ptr<SimulationDescriber> describer;
@@ -55,7 +156,6 @@ int main() {
             std::shared_ptr<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>> manager;
             std::shared_ptr<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>> golubka_V1;
 
-            // Храним конкретный тип для настройки интерполяторов
             std::shared_ptr<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>> golubka_V1_interp_mgr_concrete;
 
             // === УДАЛЕНО: golubka_V1_interp_mgr_base больше не нужен ===
@@ -88,7 +188,8 @@ int main() {
         }
 
         // === ШАГ 2: НАСТРОЙКА СОХРАНЕНИЯ ДАННЫХ ===
-        resource_manager.describer = std::make_unique<SimulationDescriber>(3); // UTC+3
+        resource_manager.describer = std::make_unique<SimulationDescriber>();
+        resource_manager.describer->set_offcet(3); // UTC+3
         resource_manager.describer->setOperatorName(config.operator_name);
         resource_manager.describer->setOdeSolver(config.ode_solver);
         resource_manager.describer->setWorldConfig(config.world_config);
@@ -98,7 +199,6 @@ int main() {
         resource_manager.csvDataSaver = std::make_unique<SimulationMomento<GLOBAL_CONFIG::PROJECT_TYPE>>();
         resource_manager.csvDataSaver->setStrategy(
             std::make_unique<CsvSaveStrategy<GLOBAL_CONFIG::PROJECT_TYPE>>(config.output_csv));
-        resource_manager.csvDataSaver->addTrackedObjs({});
 
         // === ШАГ 3: ЗАГРУЗКА ДАННЫХ ИЗ ФАЙЛОВ ===
         auto Thrust_x_t_data = loadDataTable(config.thrust_x_path);
@@ -159,7 +259,7 @@ int main() {
         golubka_V1_init_params->angularVelocity = config.rocket_init.angular_velocity.cast<GLOBAL_CONFIG::PROJECT_TYPE>();
 
         // === ШАГ 7: ЗАГРУЗКА АЭРОДИНАМИЧЕСКОЙ МОДЕЛИ ===
-        auto aero_model = aero::AerodynamicsModel::createFromFile("../config/aerodynamics_rocket_1m.json");
+        auto aero_model = aero::AerodynamicsModel::createFromFile("../config/devices/manpad_v1/aerodynamics_rocket_1m.json");
 
         // === ШАГ 8: СОЗДАНИЕ ODE-СИСТЕМЫ ===
         auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(
@@ -183,7 +283,7 @@ int main() {
 
         // === ШАГ 11: СОЗДАНИЕ МЕНЕДЖЕРА ОБЪЕКТОВ ===
         resource_manager.manager = std::make_shared<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
-        auto golubka_V1_ID = resource_manager.manager->addTrackedObject(resource_manager.golubka_V1);
+        auto golubka_V1_ID = resource_manager.manager->addTrackedObject(resource_manager.golubka_V1,0);
 
         // === ШАГ 12: КОЛБЭК С ПРОВЕРКОЙ УСЛОВИЙ ОСТАНОВКИ ===
         auto continue_callback = [golubka_V1_ID, config](
@@ -256,7 +356,10 @@ add_executable(CoreLayer main.cpp
         include/core/Model.h
         include/core/Model.cpp
         include/core/CONSTANTS.h
+        include/core/logging/Logger.h
+        include/core/logging/Logger.cpp
         include/core/GLOBAL_CONFIG.h
+
         src/OdeSolver/ODESolver.h
         src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.h
         src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.cpp
@@ -332,6 +435,8 @@ add_executable(CoreLayer main.cpp
         src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.cpp
         src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.h
         src/utils/ParameterProvider/ParameterProviderFactory.h
+        include/core/factories/Factories.cpp
+        include/core/factories/Factories.h
 )
 
 
@@ -492,6 +597,7 @@ namespace GLOBAL_CONFIG {
 #include "../../src/OdeSolver/ODESolver.h"
 #include "../../src/SimulationMomento/SimulationMomento.h"
 #include "../../src/utils/ObjManager/IObjectManager.h"
+#include "logging/Logger.h"
 
 template <typename metricType, typename CallbackType>
 class IModel {
@@ -551,10 +657,23 @@ private:
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <string>
+#include <fstream>
+#include <mutex>
+#include <chrono>
+#include <functional>
+#include <limits>
+#include <optional>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <iostream>
 
 // Сторонние библиотеки
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <nlohmann/json.hpp>
 
 // Внутренние константы
 #include "CONSTANTS.h"
@@ -897,6 +1016,7 @@ protected:
 #include "PCH.h"
 #include "../ODESolver.h"
 #include "../../utils/KinematicStateDerivative/KinematicStateDerivative.h"
+#include "logging/Logger.h"
 
 /**
  * \brief  Метод Рунге–Кутты 4 для интегрирования систем ОДУ.
@@ -965,7 +1085,7 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
             auto& current_state_storage = momento.getStateStorageByID(id);
             const auto& states = current_state_storage.getStates();
             if (states.empty()) {
-                throw std::runtime_error("В хранителе объектов состояние пустое: " + std::to_string(id));
+                throw std::runtime_error("Object storage: state is empty: " + std::to_string(id));
             }
             const auto& current_state = states.back();
 
@@ -999,8 +1119,7 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                     // Сохраняем копию в momento
                     momento.addSnapshotByID(id, std::move(new_state_copy));
                 } catch (const std::exception& e) {
-                    std::cerr << "Ошибка с расчетом производной у объекта с id:  " << id
-                              << " во временном промежутке: " << current_time << ": " << e.what() << std::endl;
+                    Logger::getInstance().error("Derivatives calculation error for obj ID: " + std::to_string(id) + " in time: " + std::to_string(current_time) + ": " + std::string(e.what()));
                     throw;
                 }
             } else {
@@ -1015,7 +1134,7 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                 break;
             }
         } catch (const std::exception& e) {
-            std::cerr << "Проблема в continue callback: " << e.what() << std::endl;
+            Logger::getInstance().error("Continue callback err: " + std::string(e.what()) );
             break;
         }
     }
@@ -1527,13 +1646,8 @@ class MemorySaveStrategy : public SaveStrategy<metricType> { ... };*/
 
 #pragma once
 #include "PCH.h"
-#include "StateStorage.h"
 #include "SaveStrategy/SaveStrategy.h"
-#include "../utils/ObjSnapshot.h"
 #include "../PhysicalObjects/AbstractObject.h"
-
-
-
 
 /**
  * \brief Менеджер состояний всей симуляции (паттерн Memento).
@@ -1547,57 +1661,74 @@ class MemorySaveStrategy : public SaveStrategy<metricType> { ... };*/
  */
 
 
-template <typename metricType>
+
+template<typename metricType>
 class SimulationMomento {
+private:
+    std::unique_ptr<SaveStrategy<metricType>> strategy_;
+    bool is_initialized_ = false;
+
 public:
     SimulationMomento() = default;
     ~SimulationMomento() = default;
 
-    void addTrackedObjs(std::vector<StateStorage<metricType>>&& trackedObjs) {
-        trackedStates_ = std::move(trackedObjs);
-    }
-
-    void setStrategy(std::shared_ptr<SaveStrategy<metricType>> strategy) {
+    void setStrategy(std::unique_ptr<SaveStrategy<metricType>> strategy) {
         strategy_ = std::move(strategy);
     }
 
-    void save() {
+    void saveStartParams(const std::unordered_map<int, std::weak_ptr<AbstractObject<metricType>>>& objects) {
         if (!strategy_) {
-            throw std::runtime_error("Save strategy not set");
+            throw std::runtime_error("SimulationMomento: save strategy not set");
         }
-        strategy_->save(trackedStates_);
-    }
 
-    const std::vector<StateStorage<metricType>>& viewTrackedObjs() const {return trackedStates_;}
+        std::vector<std::string> headers;
+        headers.push_back("time");
 
-    // Три версии для разных случаев
-    void addSnapshotByID(const int id, const ObjSnapshot<metricType>& snapshot) {getStateStorageByID(id).addState(snapshot);}
-    void addSnapshotByID(const int id, ObjSnapshot<metricType>&& snapshot) {getStateStorageByID(id).addState(std::move(snapshot));}
-    void addSnapshotByID(const int id, std::unique_ptr<ObjSnapshot<metricType>> snapshot) {getStateStorageByID(id).addState(std::move(snapshot));}
-
-    void saveStartParams(const std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>>& objects) {
-        for (const auto& [id, weak_obj] : objects) {
-            auto obj = weak_obj.lock(); // Получаем shared_ptr из weak_ptr
-            if (!obj) continue; // Пропускаем уничтоженные объекты
-            auto objectStateSnapshot = obj->getStateSnapshot();
-            StateStorage<metricType> newState(id);
-            newState.addState(objectStateSnapshot);
-            trackedStates_.push_back(std::move(newState));
-        }
-    }
-
-    StateStorage<metricType>& getStateStorageByID(int id) {
-        for (auto& tracked_state : trackedStates_) {
-            if (tracked_state.getId() == id) {
-                return tracked_state;
+        // Формируем заголовки для каждого объекта
+        for (const auto& [id, obj_weak] : objects) {
+            auto obj = obj_weak.lock();
+            if (obj) {
+                headers.push_back("obj_" + std::to_string(id) + "_x");
+                headers.push_back("obj_" + std::to_string(id) + "_y");
+                headers.push_back("obj_" + std::to_string(id) + "_z");
             }
         }
-        throw std::runtime_error("StateStorage с ID " + std::to_string(id) + " не найдена");
+
+        strategy_->saveHeader(headers);
+        is_initialized_ = true;
     }
 
-private:
-    std::vector<StateStorage<metricType>> trackedStates_;
-    std::shared_ptr<SaveStrategy<metricType>> strategy_;
+    void saveStep(metricType time, const std::unordered_map<int, std::weak_ptr<AbstractObject<metricType>>>& objects) {
+        if (!is_initialized_) {
+            throw std::runtime_error("SimulationMomento: saveStartParams not called");
+        }
+
+        if (!strategy_) {
+            throw std::runtime_error("SimulationMomento: save strategy not set");
+        }
+
+        std::vector<metricType> data;
+        data.push_back(time);
+
+        // Собираем данные для каждого объекта
+        for (const auto& [id, obj_weak] : objects) {
+            auto obj = obj_weak.lock();
+            if (obj) {
+                const auto& pos = obj->getStateSnapshot().getPosition();
+                data.push_back(pos.x());
+                data.push_back(pos.y());
+                data.push_back(pos.z());
+            }
+        }
+
+        strategy_->saveRow(data);
+    }
+
+    void finalize() {
+        if (strategy_) {
+            strategy_->finalize();
+        }
+    }
 };
 
 ```
@@ -2626,12 +2757,23 @@ template<typename metricType>
 class IObjectManager {
 public:
     virtual ~IObjectManager() = default;
-    virtual int addTrackedObject(std::shared_ptr<AbstractObject<metricType>> object)  = 0;
+
+    /**
+     * \brief Добавляет объект с явным ID
+     * \param object Умный указатель на объект
+     * \param id Явный идентификатор объекта
+     * \throws std::runtime_error если ID уже занят
+     */
+    virtual int addTrackedObject(
+        std::shared_ptr<AbstractObject<metricType>> object,
+        int id
+    ) = 0;
+
     virtual std::shared_ptr<AbstractObject<metricType>> getObjectByID(int id) const = 0;
-    virtual bool removeObjectById(int id)  = 0;
-    virtual size_t getObjectCount()  const = 0;
-    virtual void clearAllObjects()  = 0;
-    virtual std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> getAllObjects() const = 0;
+    virtual std::unordered_map<int, std::weak_ptr<AbstractObject<metricType>>> getAllObjects() const = 0;
+    virtual bool removeObject(int id) = 0;
+    virtual bool hasObject(int id) const = 0;
+    virtual size_t getObjectCount() const = 0;
 };
 ```
 
@@ -2643,9 +2785,7 @@ public:
 //
 
 #pragma once
-
 #include "IObjectManager.h"
-
 
 /**
  * \brief Класс для отслеживания динамических объектов
@@ -2656,61 +2796,69 @@ public:
  * этот класс отслеживает жизненный цикл объектов и имеет ссылки на них(а вот то, что внутри абстрактного ЛА - уже в ЛА смотри).
  * Скорее всего в ЛА будет решаться задача динамики полета с датчиков, так что смотри по ситуации.
  */
-template <typename metricType>
+
+template<typename metricType>
 class ObjectManager final : public IObjectManager<metricType> {
 private:
     std::unordered_map<int, std::shared_ptr<AbstractObject<metricType>>> all_objects_;
-    std::atomic<uint64_t> next_id_{0};  // Изменено: uint64_t для предотвращения переполнения
-    mutable std::mutex mutex_; // mutable позволяет изменение члена класса даже в константных функциях-членах(пенисах)
-
+    mutable std::mutex mutex_;
 
 public:
     ObjectManager() = default;
-    ObjectManager(const ObjectManager&) = delete;
+    ~ObjectManager() override = default;
 
-    ObjectManager& operator=(const ObjectManager&) = delete;
-
-
-    int addTrackedObject(std::shared_ptr<AbstractObject<metricType>> object) override {
+    int addTrackedObject(
+        std::shared_ptr<AbstractObject<metricType>> object,
+        int id
+    ) override {
         std::lock_guard<std::mutex> lock(mutex_);
-        int id = next_id_++;
+
+        // Проверяем, не занят ли уже этот ID
+        if (all_objects_.contains(id)) {
+            throw std::runtime_error(
+                "ObjectManager: cannot add object with ID " + std::to_string(id) +
+                " — ID already occupied"
+            );
+        }
+
         all_objects_.emplace(id, std::move(object));
         return id;
     }
 
     std::shared_ptr<AbstractObject<metricType>> getObjectByID(int id) const override {
-        std::lock_guard lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_);
         auto it = all_objects_.find(id);
-        return (it != all_objects_.end()) ? it->second : nullptr;
+        if (it != all_objects_.end()) {
+            return it->second;
+        }
+        return nullptr;
     }
 
-    bool removeObjectById(int id) override {
-        std::lock_guard lock(mutex_);
+    std::unordered_map<int, std::weak_ptr<AbstractObject<metricType>>> getAllObjects() const override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::unordered_map<int, std::weak_ptr<AbstractObject<metricType>>> result;
+        result.reserve(all_objects_.size());
+        for (const auto& [id, obj] : all_objects_) {
+            result.emplace(id, obj);
+        }
+        return result;
+    }
+
+    bool removeObject(int id) override {
+        std::lock_guard<std::mutex> lock(mutex_);
         return all_objects_.erase(id) > 0;
     }
 
+    bool hasObject(int id) const override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return all_objects_.count(id) > 0;
+    }
+
     size_t getObjectCount() const override {
-        std::lock_guard lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_);
         return all_objects_.size();
     }
-
-    void clearAllObjects() override {
-        std::lock_guard lock(mutex_);
-        all_objects_.clear();
-    }
-
-    // Получение всех объектов для решателя
-    std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> getAllObjects() const override {
-        std::lock_guard lock(mutex_);
-        std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>> objects;
-        objects.reserve(all_objects_.size());
-        for (const auto& [id, obj] : all_objects_) {
-            objects.emplace_back(id, obj);
-        }
-        return objects;
-    }
 };
-
 ```
 
 
@@ -3288,7 +3436,8 @@ struct SimulationDescriber {
     std::string earth_type{"undefined"};
     std::vector<std::string> simulation_objects{};
 
-    explicit SimulationDescriber(int utc_offset);
+    //SimulationDescriber();
+    void set_offcet(const int utc_offset);
 
     // Методы для установки значений извне
     void setOperatorName(const std::string& name);
@@ -4873,14 +5022,16 @@ Eigen::Vector3<float> SimulationConfig::extractVec3(const std::string& json, con
 #include "PCH.h"
 #include "SimulationDescriber.h"
 
-SimulationDescriber::SimulationDescriber(int utc_offset) 
-    : utc_offset_(utc_offset) {
-    start_time = std::chrono::system_clock::to_time_t(
-        std::chrono::system_clock::now() + std::chrono::hours(utc_offset));
-}
+
 
 void SimulationDescriber::setOperatorName(const std::string& name) {
     operator_name = name;
+}
+
+void  SimulationDescriber::set_offcet(const int utc_offset) {
+    utc_offset_ = utc_offset;
+    start_time = std::chrono::system_clock::to_time_t(
+    std::chrono::system_clock::now() + std::chrono::hours(utc_offset));
 }
 
 void SimulationDescriber::setOdeSolver(const std::string& solver) {
@@ -5161,115 +5312,15 @@ std::pair<metricType, metricType> NoWindModel<metricType>::getWindDirection( Eig
 ## Конфигурация
 
 
-### Файл: config\aerodynamics_rocket_1m.json
-```cpp
-{
-  "aircraft": {
-    "name": "Rocket 1m with 15cm fins",
-    "S_ref_global": 0.00785,
-    "c_ref_global": 1.0,
-    "b_ref_global": 0.15,
-    "components": [
-      {
-        "name": "body",
-        "type": "BODY",
-        "length": 1.0,
-        "diameter": 0.1,
-        "nose_type": "OGIVE",
-        "x_pos": 0.0,
-        "y_pos": 0.0,
-        "z_pos": 0.0,
-        "k_interference": 1.15,
-        "wake_shadow_factor": 0.3,
-        "hysteresis_tau": 0.2,
-        "vortex_gain": 0.1
-      },
-      {
-        "name": "fin_1",
-        "type": "FIN",
-        "S_ref": 0.0015,
-        "b_ref": 0.15,
-        "c_ref": 0.1,
-        "AR": 15.0,
-        "x_pos": 0.85,
-        "y_pos": 0.0,
-        "z_pos": 0.05,
-        "mount_angle": 0.0,
-        "can_deflect": true,
-        "delta": 0.0,
-        "k_interference": 1.2,
-        "wake_shadow_factor": 0.4,
-        "hysteresis_tau": 0.15,
-        "vortex_gain": 0.12
-      },
-      {
-        "name": "fin_2",
-        "type": "FIN",
-        "S_ref": 0.0015,
-        "b_ref": 0.15,
-        "c_ref": 0.1,
-        "AR": 15.0,
-        "x_pos": 0.85,
-        "y_pos": 0.0,
-        "z_pos": -0.05,
-        "mount_angle": 180.0,
-        "can_deflect": true,
-        "delta": 0.0,
-        "k_interference": 1.2,
-        "wake_shadow_factor": 0.4,
-        "hysteresis_tau": 0.15,
-        "vortex_gain": 0.12
-      },
-      {
-        "name": "fin_3",
-        "type": "FIN",
-        "S_ref": 0.0015,
-        "b_ref": 0.15,
-        "c_ref": 0.1,
-        "AR": 15.0,
-        "x_pos": 0.85,
-        "y_pos": 0.05,
-        "z_pos": 0.0,
-        "mount_angle": 90.0,
-        "can_deflect": true,
-        "delta": 0.0,
-        "k_interference": 1.2,
-        "wake_shadow_factor": 0.4,
-        "hysteresis_tau": 0.15,
-        "vortex_gain": 0.12
-      },
-      {
-        "name": "fin_4",
-        "type": "FIN",
-        "S_ref": 0.0015,
-        "b_ref": 0.15,
-        "c_ref": 0.1,
-        "AR": 15.0,
-        "x_pos": 0.85,
-        "y_pos": -0.05,
-        "z_pos": 0.0,
-        "mount_angle": 270.0,
-        "can_deflect": true,
-        "delta": 0.0,
-        "k_interference": 1.2,
-        "wake_shadow_factor": 0.4,
-        "hysteresis_tau": 0.15,
-        "vortex_gain": 0.12
-      }
-    ]
-  }
-}
-
-```
-
-
 ### Файл: config\simulation.json
 ```cpp
 {
+  "describer_config": "Standart Manager",
+  "manager_config": "Simple Decriber",
   "operator_name": "Ilya Berulava",
   "ode_solver": "RK-4",
   "world_config": "Simple world",
-  "data_saver": "txt",
+  "data_saver": "CSV DataSaver",
   "earth_type": "flat earth",
   "time_step": 0.01,
   "max_time": 15.0,
@@ -5292,5 +5343,83 @@ std::pair<metricType, metricType> NoWindModel<metricType>::getWindDirection( Eig
   "angular_velocity": [0.0, 0.0, 0.0]
 }
 
+```
+
+
+### Файл: config\simulation_new.json
+```cpp
+{
+  "operator_name": "Ilya Berulava",
+  "ode_solver": "RungeKutta4",
+  "world_config": "SimpleFlatEarth",
+  "data_saver": "CSV",
+  "describer": "Простой вариант запуска с плоской землей и РК4",
+  "time_step": 0.01,
+  "output_csv": "../data/output/results_data/simulation_data.csv",
+  "log_dir": "../logs",
+  "logger_type": "both",
+  "stop_conditions": {
+    "max_time": 15.0,
+    "main_object_id": 0,
+    "min_height": { "object_id": 1, "value": -0.1 },
+    "logic": "OR"
+  },
+  "devices": [
+    {
+      "id": 0,
+      "name": "manpad",
+      "config_path": "../../config/devices/manpad_v1.json",
+      "initial_state": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "velocity": [
+          48.3,
+          0,
+          12.9
+        ],
+        "euler": [
+          0,
+          0.2618,
+          0
+        ],
+        "angular_velocity": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "id": 1,
+      "name": "simpl_target",
+      "config_path": "../../config/devices/simple_aircraft.json",
+      "initial_state": {
+        "position": [
+          100,
+          0,
+          30
+        ],
+        "velocity": [
+          15,
+          0,
+          0
+        ],
+        "euler": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ]
+}
 ```
 

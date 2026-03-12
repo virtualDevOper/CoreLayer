@@ -1,14 +1,16 @@
 #include "PCH.h"
 #include "SimulationDescriber.h"
 
-SimulationDescriber::SimulationDescriber(int utc_offset) 
-    : utc_offset_(utc_offset) {
-    start_time = std::chrono::system_clock::to_time_t(
-        std::chrono::system_clock::now() + std::chrono::hours(utc_offset));
-}
+
 
 void SimulationDescriber::setOperatorName(const std::string& name) {
     operator_name = name;
+}
+
+void  SimulationDescriber::set_offcet(const int utc_offset) {
+    utc_offset_ = utc_offset;
+    start_time = std::chrono::system_clock::to_time_t(
+    std::chrono::system_clock::now() + std::chrono::hours(utc_offset));
 }
 
 void SimulationDescriber::setOdeSolver(const std::string& solver) {

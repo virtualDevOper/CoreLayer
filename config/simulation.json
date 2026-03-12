@@ -1,8 +1,10 @@
 {
+  "describer_config": "Standart Manager",
+  "manager_config": "Simple Decriber",
   "operator_name": "Ilya Berulava",
   "ode_solver": "RK-4",
   "world_config": "Simple world",
-  "data_saver": "txt",
+  "data_saver": "CSV DataSaver",
   "earth_type": "flat earth",
   "time_step": 0.01,
   "max_time": 15.0,

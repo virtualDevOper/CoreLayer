@@ -25,6 +25,104 @@
 #include "include/aero_simpi/aerodynamics.h"
 #include "src/utils/Interpolation/ComponentInterpolationManager.h"
 
+
+using json = nlohmann::json;
+
+
+
+
+
+/*int main() {
+    try {
+        // === 1. ЗАГРУЗКА И ВАЛИДАЦИЯ ===
+        auto config = SimulationConfig::loadFromJsonFile("../config/simulation.json");
+        Factories::validateConfig(config);
+
+        // === 2. ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ ===
+        Factories::loggerSetup(
+            config.value("logger_type", "both").get<std::string>(),
+            config.value("log_dir", "../logs").get<std::string>()
+        );
+
+        auto world = Factories::createWorld<GLOBAL_CONFIG::PROJECT_TYPE>(
+            config.at("world_config").get<std::string>()
+        );
+
+        auto manager = Factories::createManager<GLOBAL_CONFIG::PROJECT_TYPE>(
+            "Standard Manager", config
+        );
+
+        auto describer = Factories::createDescriber(
+            config.value("describer", "Simple Describer").get<std::string>(),
+            config, 3
+        );
+
+        auto data_saver = Factories::createDataSaver<GLOBAL_CONFIG::PROJECT_TYPE>(
+            config.at("data_saver").get<std::string>(), config
+        );
+
+        using CallbackType = GLOBAL_CONFIG::STOP_SOLVE_FUNC_TYPE<
+            IObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>
+        >;
+        auto solver = Factories::createSolver<CallbackType>(
+            config.at("ode_solver").get<std::string>(), config
+        );
+
+        // === 3. СОЗДАНИЕ ОБЪЕКТОВ С ЯВНЫМИ ID ===
+        for (const auto& device_cfg : config.at("devices")) {
+            const int device_id = device_cfg.at("id").get<int>();
+
+            auto device = Factories::createObject<GLOBAL_CONFIG::PROJECT_TYPE>(
+                device_cfg.at("name").get<std::string>(),
+                device_cfg,
+                world
+            );
+
+            // Явно передаём ID — никаких автогенераций
+            manager->addTrackedObject(std::move(device), device_id);
+        }
+
+        // === 4. ПОДГОТОВКА ОПИСАТЕЛЯ ===
+        {
+            const auto all_objects = manager->getAllObjects();
+            std::vector<int> ids;
+            ids.reserve(all_objects.size());
+            for (const auto& [id, _] : all_objects) ids.push_back(id);
+            describer->setSimulationObjects(ids);
+        }
+
+        // === 5. КОЛБЕК ОСТАНОВКИ ===
+        if (!config.contains("stop_conditions")) {
+            throw std::runtime_error("Missing 'stop_conditions' in config");
+        }
+
+        auto stop_callback = Factories::createStopCallback<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>(
+            config["stop_conditions"],
+            manager
+        );
+
+        // === 6. ЗАПУСК ===
+        IModel<GLOBAL_CONFIG::PROJECT_TYPE, CallbackType> model(
+            std::move(solver),
+            world,
+            std::move(data_saver),
+            std::move(describer),
+            manager,
+            std::move(stop_callback),
+            config.at("time_step").get<GLOBAL_CONFIG::PROJECT_TYPE>()
+        );
+
+        model.run();
+        return 0;
+
+    } catch (const std::exception& e) {
+        if (Logger::isInitialized())
+            Logger::getInstance().error("Main error: " + std::string(e.what()));
+        std::cerr << "FATAL: " << e.what() << std::endl;
+        return 1;
+    }
+}*/
+
 auto loadDataTable = [](const std::string& filename) {
     try {
         auto loader = uploader1D_fromTXT<GLOBAL_CONFIG::PROJECT_TYPE>(filename);
@@ -37,10 +135,13 @@ auto loadDataTable = [](const std::string& filename) {
 
 int main() {
     try {
+        auto log_dir = "../logs";
+        Logger::getInstance().configure(true,true,log_dir);
         // === ШАГ 0: ЗАГРУЗКА КОНФИГУРАЦИИ ===
         auto config = SimulationConfig::loadFromJsonFile("../config/simulation.json");
 
-        // Ресурс-менеджер для автоматического освобождения памяти
+
+
         struct ResourceManager {
             std::shared_ptr<SimpleWorld<GLOBAL_CONFIG::PROJECT_TYPE>> world;
             std::unique_ptr<SimulationDescriber> describer;
@@ -48,7 +149,6 @@ int main() {
             std::shared_ptr<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>> manager;
             std::shared_ptr<MANPAD_V1<GLOBAL_CONFIG::PROJECT_TYPE>> golubka_V1;
 
-            // Храним конкретный тип для настройки интерполяторов
             std::shared_ptr<ComponentInterpolationManager<GLOBAL_CONFIG::PROJECT_TYPE>> golubka_V1_interp_mgr_concrete;
 
             // === УДАЛЕНО: golubka_V1_interp_mgr_base больше не нужен ===
@@ -81,7 +181,8 @@ int main() {
         }
 
         // === ШАГ 2: НАСТРОЙКА СОХРАНЕНИЯ ДАННЫХ ===
-        resource_manager.describer = std::make_unique<SimulationDescriber>(3); // UTC+3
+        resource_manager.describer = std::make_unique<SimulationDescriber>();
+        resource_manager.describer->set_offcet(3); // UTC+3
         resource_manager.describer->setOperatorName(config.operator_name);
         resource_manager.describer->setOdeSolver(config.ode_solver);
         resource_manager.describer->setWorldConfig(config.world_config);
@@ -91,7 +192,6 @@ int main() {
         resource_manager.csvDataSaver = std::make_unique<SimulationMomento<GLOBAL_CONFIG::PROJECT_TYPE>>();
         resource_manager.csvDataSaver->setStrategy(
             std::make_unique<CsvSaveStrategy<GLOBAL_CONFIG::PROJECT_TYPE>>(config.output_csv));
-        resource_manager.csvDataSaver->addTrackedObjs({});
 
         // === ШАГ 3: ЗАГРУЗКА ДАННЫХ ИЗ ФАЙЛОВ ===
         auto Thrust_x_t_data = loadDataTable(config.thrust_x_path);
@@ -152,7 +252,7 @@ int main() {
         golubka_V1_init_params->angularVelocity = config.rocket_init.angular_velocity.cast<GLOBAL_CONFIG::PROJECT_TYPE>();
 
         // === ШАГ 7: ЗАГРУЗКА АЭРОДИНАМИЧЕСКОЙ МОДЕЛИ ===
-        auto aero_model = aero::AerodynamicsModel::createFromFile("../config/aerodynamics_rocket_1m.json");
+        auto aero_model = aero::AerodynamicsModel::createFromFile("../config/devices/manpad_v1/aerodynamics_rocket_1m.json");
 
         // === ШАГ 8: СОЗДАНИЕ ODE-СИСТЕМЫ ===
         auto golubka_V1_system = std::make_unique<FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>>(
@@ -176,7 +276,7 @@ int main() {
 
         // === ШАГ 11: СОЗДАНИЕ МЕНЕДЖЕРА ОБЪЕКТОВ ===
         resource_manager.manager = std::make_shared<ObjectManager<GLOBAL_CONFIG::PROJECT_TYPE>>();
-        auto golubka_V1_ID = resource_manager.manager->addTrackedObject(resource_manager.golubka_V1);
+        auto golubka_V1_ID = resource_manager.manager->addTrackedObject(resource_manager.golubka_V1,0);
 
         // === ШАГ 12: КОЛБЭК С ПРОВЕРКОЙ УСЛОВИЙ ОСТАНОВКИ ===
         auto continue_callback = [golubka_V1_ID, config](

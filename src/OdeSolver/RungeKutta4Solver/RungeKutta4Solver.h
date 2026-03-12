@@ -5,6 +5,7 @@
 #include "PCH.h"
 #include "../ODESolver.h"
 #include "../../utils/KinematicStateDerivative/KinematicStateDerivative.h"
+#include "logging/Logger.h"
 
 /**
  * \brief  Метод Рунге–Кутты 4 для интегрирования систем ОДУ.
@@ -73,7 +74,7 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
             auto& current_state_storage = momento.getStateStorageByID(id);
             const auto& states = current_state_storage.getStates();
             if (states.empty()) {
-                throw std::runtime_error("В хранителе объектов состояние пустое: " + std::to_string(id));
+                throw std::runtime_error("Object storage: state is empty: " + std::to_string(id));
             }
             const auto& current_state = states.back();
 
@@ -107,8 +108,7 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                     // Сохраняем копию в momento
                     momento.addSnapshotByID(id, std::move(new_state_copy));
                 } catch (const std::exception& e) {
-                    std::cerr << "Ошибка с расчетом производной у объекта с id:  " << id
-                              << " во временном промежутке: " << current_time << ": " << e.what() << std::endl;
+                    Logger::getInstance().error("Derivatives calculation error for obj ID: " + std::to_string(id) + " in time: " + std::to_string(current_time) + ": " + std::string(e.what()));
                     throw;
                 }
             } else {
@@ -123,7 +123,7 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                 break;
             }
         } catch (const std::exception& e) {
-            std::cerr << "Проблема в continue callback: " << e.what() << std::endl;
+            Logger::getInstance().error("Continue callback err: " + std::string(e.what()) );
             break;
         }
     }

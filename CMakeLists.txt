@@ -20,7 +20,10 @@ add_executable(CoreLayer main.cpp
         include/core/Model.h
         include/core/Model.cpp
         include/core/CONSTANTS.h
+        include/core/logging/Logger.h
+        include/core/logging/Logger.cpp
         include/core/GLOBAL_CONFIG.h
+
         src/OdeSolver/ODESolver.h
         src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.h
         src/OdeSolver/RungeKutta4Solver/RungeKutta4Solver.cpp
@@ -96,6 +99,8 @@ add_executable(CoreLayer main.cpp
         src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.cpp
         src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.h
         src/utils/ParameterProvider/ParameterProviderFactory.h
+        include/core/factories/Factories.cpp
+        include/core/factories/Factories.h
 )
 
 
