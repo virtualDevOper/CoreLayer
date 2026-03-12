@@ -1,145 +1,140 @@
+// src/utils/SimulationConfig.cpp
 #include "SimulationConfig.h"
-
 #include <fstream>
-#include <sstream>
 
+// ============================================================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ПАРСИНГА
+// ============================================================================
 
-
-namespace {
-    std::string findKeyPattern(const std::string& key) {
-        return "\"" + key + "\"";
-    }
-
-    std::string::size_type findValueStart(const std::string& json, std::string::size_type pos) {
-        auto colon = json.find(':', pos);
-        if (colon == std::string::npos) {
-            throw std::runtime_error("SimulationConfig: ':' not found after key");
-        }
-        auto value_start = json.find_first_not_of(" \t\n\r", colon + 1);
-        if (value_start == std::string::npos) {
-            throw std::runtime_error("SimulationConfig: value not found after ':'");
-        }
-        return value_start;
-    }
+static Eigen::Vector3<double> parseVector3Safe(const nlohmann::json& arr, 
+                                               const Eigen::Vector3<double>& default_val) {
+    if (!arr.is_array() || arr.size() < 3) return default_val;
+    return Eigen::Vector3<double>(
+        arr.at(0).get<double>(),
+        arr.at(1).get<double>(),
+        arr.at(2).get<double>()
+    );
 }
 
-SimulationConfig SimulationConfig::loadFromJsonFile(const std::string& path) {
-    SimulationConfig cfg;
-    const auto json = readFileToString(path);
+// ============================================================================
+// ПАРСИНГ ВЛОЖЕННЫХ СТРУКТУР
+// ============================================================================
 
-    // Новые строки для описания
-    cfg.operator_name = extractString(json, "operator_name", "");
-    cfg.ode_solver = extractString(json, "ode_solver", "");
-    cfg.world_config = extractString(json, "world_config", "");
-    cfg.data_saver = extractString(json, "data_saver", "");
-    cfg.earth_type = extractString(json, "earth_type", "");
+Eigen::Vector3<double> SimulationConfig::parseVector3(const nlohmann::json& arr) {
+    if (!arr.is_array() || arr.size() != 3) {
+        throw std::runtime_error("Vector3 must be array of 3 numbers");
+    }
+    return Eigen::Vector3<double>(
+        arr.at(0).get<double>(),
+        arr.at(1).get<double>(),
+        arr.at(2).get<double>()
+    );
+}
 
-    // Пути к таблицам
-    cfg.thrust_x_path = extractString(json, "thrust_x", "");
-    cfg.thrust_y_path = extractString(json, "thrust_y", "");
-    cfg.thrust_z_path = extractString(json, "thrust_z", "");
-    cfg.mass_path = extractString(json, "mass", "");
-    cfg.Ixx_path = extractString(json, "Ixx", "");
-    cfg.Iyy_path = extractString(json, "Iyy", "");
-    cfg.Izz_path = extractString(json, "Izz", "");
-    cfg.COM_x_path = extractString(json, "COM_x", "");
-    cfg.COM_y_path = extractString(json, "COM_y", "");
-    cfg.COM_z_path = extractString(json, "COM_z", "");
+DeviceInitialState SimulationConfig::parseInitialState(const nlohmann::json& state) {
+    DeviceInitialState init;
+    if (state.contains("position")) {
+        init.position = parseVector3(state.at("position"));
+    }
+    if (state.contains("velocity")) {
+        init.velocity = parseVector3(state.at("velocity"));
+    }
+    if (state.contains("euler")) {
+        init.euler = parseVector3(state.at("euler"));
+    }
+    if (state.contains("angular_velocity")) {
+        init.angular_velocity = parseVector3(state.at("angular_velocity"));
+    }
+    return init;
+}
 
-    // Глобальные параметры симуляции
-    cfg.time_step = extractFloat(json, "time_step", cfg.time_step);
-    cfg.max_time = extractFloat(json, "max_time", cfg.max_time);
-    cfg.output_csv = extractString(json, "output_csv", "");
-
-    // Начальные условия
-    cfg.rocket_init.position = extractVec3(json, "position", cfg.rocket_init.position);
-    cfg.rocket_init.velocity = extractVec3(json, "velocity", cfg.rocket_init.velocity);
-    cfg.rocket_init.euler = extractVec3(json, "euler", cfg.rocket_init.euler);
-    cfg.rocket_init.angular_velocity = extractVec3(json, "angular_velocity", cfg.rocket_init.angular_velocity);
-
+DeviceConfig SimulationConfig::parseDevice(const nlohmann::json& dev) {
+    DeviceConfig cfg;
+    cfg.id = dev.at("id").get<int>();
+    cfg.name = dev.at("name").get<std::string>();
+    cfg.config_path = dev.at("config_path").get<std::string>();
+    if (dev.contains("initial_state")) {
+        cfg.initial_state = parseInitialState(dev.at("initial_state"));
+    }
     return cfg;
 }
 
-std::string SimulationConfig::readFileToString(const std::string& path) {
+StopConditions SimulationConfig::parseStopConditions(const nlohmann::json& stop) {
+    StopConditions sc;
+    
+    if (stop.contains("max_time")) {
+        sc.max_time = stop.at("max_time").get<double>();
+    }
+    
+    if (stop.contains("main_object_id")) {
+        sc.main_object_id = stop.at("main_object_id").get<int>();
+    }
+    
+    if (stop.contains("min_height")) {
+        StopConditions::MinHeight mh;
+        const auto& mh_cfg = stop.at("min_height");
+        
+        if (mh_cfg.is_number()) {
+            mh.value = mh_cfg.get<double>();
+            mh.object_id = sc.main_object_id;  // по умолчанию — главный объект
+        }
+        else if (mh_cfg.is_object()) {
+            if (mh_cfg.contains("object_id")) {
+                mh.object_id = mh_cfg.at("object_id").get<int>();
+            }
+            mh.value = mh_cfg.at("value").get<double>();
+        }
+        sc.min_height = mh;
+    }
+    
+    if (stop.contains("logic")) {
+        sc.logic = stop.at("logic").get<std::string>();
+    }
+    
+    return sc;
+}
+
+// ============================================================================
+// ОСНОВНОЙ ПАРСЕР
+// ============================================================================
+
+SimulationConfig SimulationConfig::parse(const nlohmann::json& json) {
+    SimulationConfig cfg;
+    
+    // === Глобальные параметры ===
+    cfg.operator_name = json.value("operator_name", std::string(""));
+    cfg.ode_solver = json.value("ode_solver", std::string("RungeKutta4"));
+    cfg.world_config = json.value("world_config", std::string("SimpleFlatEarth"));
+    cfg.data_saver = json.value("data_saver", std::string("CSV"));
+    cfg.describer = json.value("describer", std::string("Simple Describer"));
+    cfg.time_step = json.value("time_step", 0.01);
+    cfg.output_csv = json.value("output_csv", std::string("../data/output/results_data/simulation_data.csv"));
+    cfg.log_dir = json.value("log_dir", std::string("../logs"));
+    cfg.logger_type = json.value("logger_type", std::string("both"));
+    
+    // === Устройства ===
+    if (json.contains("devices") && json.at("devices").is_array()) {
+        for (const auto& dev : json.at("devices")) {
+            cfg.devices.push_back(parseDevice(dev));
+        }
+    }
+    
+    // === Условия остановки ===
+    if (json.contains("stop_conditions")) {
+        cfg.stop_conditions = parseStopConditions(json.at("stop_conditions"));
+    }
+    
+    return cfg;
+}
+
+SimulationConfig SimulationConfig::loadFromJsonFile(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        throw std::runtime_error("SimulationConfig: cannot open config file: " + path);
+        throw std::runtime_error("Cannot open config file: " + path);
     }
-    std::ostringstream ss;
-    ss << file.rdbuf();
-    return ss.str();
-}
-
-float SimulationConfig::extractFloat(const std::string& json, const std::string& key, float default_value) {
-    const auto pattern = findKeyPattern(key);
-    auto pos = json.find(pattern);
-    if (pos == std::string::npos) {
-        return default_value;
-    }
-
-    auto value_start = findValueStart(json, pos + pattern.size());
-
-    // Читаем до конца числа
-    auto value_end = json.find_first_of(",}\n\r", value_start);
-    if (value_end == std::string::npos) {
-        value_end = json.size();
-    }
-    auto token = json.substr(value_start, value_end - value_start);
-    try {
-        return std::stof(token);
-    } catch (const std::exception&) {
-        return default_value;
-    }
-}
-
-std::string SimulationConfig::extractString(const std::string& json, const std::string& key, const std::string& default_value) {
-    const auto pattern = findKeyPattern(key);
-    auto pos = json.find(pattern);
-    if (pos == std::string::npos) {
-        return default_value;
-    }
-
-    auto value_start = findValueStart(json, pos + pattern.size());
-    if (json[value_start] != '"') {
-        return default_value;
-    }
-    ++value_start;
-    auto value_end = json.find('"', value_start);
-    if (value_end == std::string::npos) {
-        throw std::runtime_error("SimulationConfig: unterminated string for key: " + key);
-    }
-    return json.substr(value_start, value_end - value_start);
-}
-
-Eigen::Vector3<float> SimulationConfig::extractVec3(const std::string& json, const std::string& key, const Eigen::Vector3<float>& default_value) {
-    const auto pattern = findKeyPattern(key);
-    auto pos = json.find(pattern);
-    if (pos == std::string::npos) {
-        return default_value;
-    }
-
-    auto value_start = findValueStart(json, pos + pattern.size());
-    if (json[value_start] != '[') {
-        return default_value;
-    }
-    ++value_start;
-    auto value_end = json.find(']', value_start);
-    if (value_end == std::string::npos) {
-        throw std::runtime_error("SimulationConfig: unterminated array for key: " + key);
-    }
-
-    auto array_content = json.substr(value_start, value_end - value_start);
-    std::istringstream ss(array_content);
-    std::string part;
-    float values[3] = { default_value.x(), default_value.y(), default_value.z() };
-    int idx = 0;
-    while (std::getline(ss, part, ',') && idx < 3) {
-        try {
-            values[idx] = std::stof(part);
-        } catch (const std::exception&) {
-            // оставляем значение по умолчанию
-        }
-        ++idx;
-    }
-    return Eigen::Vector3<float>(values[0], values[1], values[2]);
+    
+    nlohmann::json json;
+    file >> json;
+    
+    return parse(json);
 }

@@ -1,50 +1,67 @@
+// src/utils/SimulationConfig.h
 #pragma once
 #include "PCH.h"
 
-/**
- * \brief Минимальная JSON-конфигурация запуска симуляции.
- *
- * Парсер предельно простой и ориентирован только на ожидаемую структуру.
- * Это не общий JSON-парсер, а специализированный конфиг-ридер.
- */
+// ============================================================================
+// СТРУКТУРЫ ДЛЯ НОВОГО ФОРМАТА
+// ============================================================================
 
-struct SimulationConfigRocketInit {
-    Eigen::Vector3<float> position{0.f, 0.f, 0.f};
-    Eigen::Vector3<float> velocity{0.f, 0.f, 0.f};
-    Eigen::Vector3<float> euler{0.f, 0.f, 0.f};
-    Eigen::Vector3<float> angular_velocity{0.f, 0.f, 0.f};
+struct DeviceInitialState {
+    Eigen::Vector3<double> position{0.0, 0.0, 0.0};
+    Eigen::Vector3<double> velocity{0.0, 0.0, 0.0};
+    Eigen::Vector3<double> euler{0.0, 0.0, 0.0};
+    Eigen::Vector3<double> angular_velocity{0.0, 0.0, 0.0};
 };
 
+struct DeviceConfig {
+    int id;
+    std::string name;
+    std::string config_path;
+    DeviceInitialState initial_state;
+};
+
+struct StopConditions {
+    std::optional<double> max_time;
+    std::optional<int> main_object_id;
+
+    struct MinHeight {
+        std::optional<int> object_id;
+        double value;
+    };
+    std::optional<MinHeight> min_height;
+
+    std::string logic = "OR";  // "AND" или "OR"
+};
+
+// ============================================================================
+// ОСНОВНОЙ КЛАСС КОНФИГУРАЦИИ
+// ============================================================================
+
 struct SimulationConfig {
+    // === Глобальные параметры ===
     std::string operator_name;
     std::string ode_solver;
     std::string world_config;
     std::string data_saver;
-    std::string earth_type;
-
-    float time_step;  // Разумное значение по умолчанию
-    float max_time;    // Минимальное разумное значение
+    std::string describer;
+    double time_step;
     std::string output_csv;
+    std::string log_dir;
+    std::string logger_type;
 
-    // Пути к табличным данным
-    std::string thrust_x_path;
-    std::string thrust_y_path;
-    std::string thrust_z_path;
-    std::string mass_path;
-    std::string Ixx_path;
-    std::string Iyy_path;
-    std::string Izz_path;
-    std::string COM_x_path;
-    std::string COM_y_path;
-    std::string COM_z_path;
+    // === Устройства (массив) ===
+    std::vector<DeviceConfig> devices;
 
-    SimulationConfigRocketInit rocket_init;
+    // === Условия остановки ===
+    StopConditions stop_conditions;
 
+    // === Статические методы загрузки ===
     static SimulationConfig loadFromJsonFile(const std::string& path);
+    static SimulationConfig parse(const nlohmann::json& json);
 
 private:
-    static std::string readFileToString(const std::string& path);
-    static float extractFloat(const std::string& json, const std::string& key, float default_value);
-    static std::string extractString(const std::string& json, const std::string& key, const std::string& default_value);
-    static Eigen::Vector3<float> extractVec3(const std::string& json, const std::string& key, const Eigen::Vector3<float>& default_value);
+    static DeviceConfig parseDevice(const nlohmann::json& dev);
+    static StopConditions parseStopConditions(const nlohmann::json& stop);
+    static DeviceInitialState parseInitialState(const nlohmann::json& state);
+    static Eigen::Vector3<double> parseVector3(const nlohmann::json& arr);
 };

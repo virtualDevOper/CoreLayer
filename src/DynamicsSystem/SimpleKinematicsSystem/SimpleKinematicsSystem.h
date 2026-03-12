@@ -1,6 +1,5 @@
 #pragma once
-#include "PCH.h"
-#include "../IDynamicsSystem.h"
+#include "DynamicsSystem/IDynamicsSystem.h"
 
 template <typename metricType>
 class SimpleKinematicsSystem final : public IDynamicsSystem<metricType> {
@@ -10,22 +9,24 @@ public:
     }
 
     std::unique_ptr<KinematicStateDerivative<metricType>> get_rhs_derivatives(
-        const KinematicState<metricType>& state,
-        metricType /*t*/
+    const KinematicState<metricType>& state,
+    metricType /*t*/
     ) override {
-        // Только кинематика участвует в РК4
         return std::make_unique<KinematicStateDerivative<metricType>>(
-             state.getVelocity(), // dPosition/dt
-             Eigen::Vector3<metricType>::Zero(), // dVelocity/dt
-             state.getAngularVelocity(), // dEulerAngles/dt
-             Eigen::Vector3<metricType>::Zero() // dAngularVelocity/dt
-         );
+        state.getVelocity(),                              // dPosition/dt
+        Eigen::Vector3<metricType>::Zero(),               // dVelocity/dt
+        state.getAngularVelocity(),                       // dEulerAngles/dt
+        Eigen::Vector3<metricType>::Zero()                // dAngularVelocity/dt
+        );
     }
 
+    // === ИСПРАВЛЕНО: используем Builder вместо конструктора ===
     std::unique_ptr<ObjSnapshot<metricType>> augmentSnapshot(
-        const KinematicState<metricType>& state,
-        metricType t
-    ) override {
-        return std::make_unique<ObjSnapshot<metricType>>(state, t);
+    const KinematicState<metricType>& state,
+    metricType t
+    ) const override {
+        return ObjSnapshot<metricType>::createBuilder(state)
+        .setTime(t)
+        .buildUnique();
     }
 };

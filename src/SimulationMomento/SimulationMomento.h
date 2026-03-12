@@ -52,10 +52,10 @@ public:
     void addSnapshotByID(const int id, ObjSnapshot<metricType>&& snapshot) {getStateStorageByID(id).addState(std::move(snapshot));}
     void addSnapshotByID(const int id, std::unique_ptr<ObjSnapshot<metricType>> snapshot) {getStateStorageByID(id).addState(std::move(snapshot));}
 
-    void saveStartParams(const std::vector<std::pair<int, std::weak_ptr<AbstractObject<metricType>>>>& objects) {
+    void saveStartParams(const std::unordered_map<int, std::weak_ptr<AbstractObject<metricType>>>& objects) {
         for (const auto& [id, weak_obj] : objects) {
-            auto obj = weak_obj.lock(); // Получаем shared_ptr из weak_ptr
-            if (!obj) continue; // Пропускаем уничтоженные объекты
+            auto obj = weak_obj.lock();
+            if (!obj) continue;
             auto objectStateSnapshot = obj->getStateSnapshot();
             StateStorage<metricType> newState(id);
             newState.addState(objectStateSnapshot);

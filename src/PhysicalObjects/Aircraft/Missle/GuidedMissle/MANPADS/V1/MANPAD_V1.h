@@ -26,12 +26,12 @@ public:
     explicit MANPAD_V1(
         std::unique_ptr<IDynamicsSystem<metricType>> sys,
         std::unique_ptr<ObjInitParams<metricType>> initial_params,
-        std::weak_ptr<IParameterProvider<metricType>> param_provider)
+        std::shared_ptr<IParameterProvider<metricType>> param_provider)
         : AbstractObject<metricType>(std::move(sys), std::move(initial_params)),
           param_provider_(param_provider)
     {
         // Проверяем, что провайдер параметров доступен
-        if (param_provider_.expired()) {
+        if (!param_provider_) {
             throw std::invalid_argument("ParameterProvider is not available");
         }
     }
@@ -54,7 +54,7 @@ public:
     }
 
 protected:
-    std::weak_ptr<IParameterProvider<metricType>> param_provider_;
+    std::shared_ptr<IParameterProvider<metricType>> param_provider_;
 
     [[nodiscard]] std::shared_ptr<IParameterProvider<metricType>> getParameterProvider() const {
         auto provider = param_provider_.lock();

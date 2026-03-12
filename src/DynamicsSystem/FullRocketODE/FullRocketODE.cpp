@@ -34,9 +34,9 @@ std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>:
     const KinematicState<metricType>& state,
     metricType t
 ) {
-    auto params_provider = params_provider_.lock();
+    auto params_provider = params_provider_;
     if (!params_provider) {
-        throw std::runtime_error("DynamicParametersProvider уже был уничтожен");
+        throw std::runtime_error("DynamicParametersProvider is null");
     }
 
     // === Получение параметров ===
@@ -150,7 +150,7 @@ std::unique_ptr<ObjSnapshot<metricType>> FullRocketODE<metricType>::augmentSnaps
     const KinematicState<metricType>& state,
     metricType t
 ) const {
-    auto params_provider = params_provider_.lock();
+    auto params_provider = params_provider_;
     if (!params_provider) {
         throw std::runtime_error("DynamicParametersProvider expired in augmentSnapshot");
     }

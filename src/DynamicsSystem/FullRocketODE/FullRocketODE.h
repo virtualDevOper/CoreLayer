@@ -40,7 +40,7 @@
 template <typename metricType>
 class FullRocketODE final : public IDynamicsSystem<metricType> {
 private:
-    std::weak_ptr<DynamicParametersProvider<metricType>> params_provider_;
+    std::shared_ptr<DynamicParametersProvider<metricType>> params_provider_;
     std::weak_ptr<AbstractWorldModel<metricType>> world_;
     std::shared_ptr<aero::AerodynamicsModel> aero_model_;
     mutable Eigen::Vector3<metricType> last_computed_forces_;
