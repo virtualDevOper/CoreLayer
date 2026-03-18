@@ -1,0 +1,9 @@
+{
+  "mass_path":      "../data/input/dataTables/net_projectile/Mass_t.txt",
+  "cx_before_path":"../data/input/dataTables/net_projectile/Cx_alpha_before.txt",
+  "cx_after_path": "../data/input/dataTables/net_projectile/Cx_alpha_after.txt",
+  "sref_path":     "../data/input/dataTables/net_projectile/S_ref_t.txt",
+
+  "deploy_start": 2.0,
+  "deploy_duration": 1.2
+}

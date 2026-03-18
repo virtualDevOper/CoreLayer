@@ -84,7 +84,7 @@ private:
 
     Eigen::Vector3<metricType> computeLinearAccelerationENU(
         const Eigen::Vector3<metricType>& F_sum,
-        metricType mass) const;
+        metricType mass);
 
     Eigen::Vector3<metricType> computeEulerAnglesDerivatives(
         const Eigen::Vector3<metricType>& euler,

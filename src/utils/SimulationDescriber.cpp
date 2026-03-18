@@ -25,9 +25,7 @@ void SimulationDescriber::setDataSaver(const std::string& saver) {
     data_saver = saver;
 }
 
-void SimulationDescriber::setEarthType(const std::string& type) {
-    earth_type = type;
-}
+
 
 void SimulationDescriber::setSimulationObjects(const std::vector<int>& ids) {
     simulation_objects.reserve(ids.size());

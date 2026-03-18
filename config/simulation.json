@@ -1,28 +1,57 @@
 {
-  "describer_config": "Standart Manager",
-  "manager_config": "Simple Decriber",
   "operator_name": "Ilya Berulava",
-  "ode_solver": "RK-4",
-  "world_config": "Simple world",
+  "ode_solver": "RungeKutta4",
+  "world_config": "SimpleFlatEarth",
   "data_saver": "CSV DataSaver",
-  "earth_type": "flat earth",
+  "describer": "Simple Describer",
   "time_step": 0.01,
-  "max_time": 15.0,
   "output_csv": "../data/output/results_data/simulation_data.csv",
+  "log_dir": "../logs",
+  "logger_type": "both",
 
-  "thrust_x": "../data/input/dataTables/golubka_V1/Thrusts/Thrust_x_t.txt",
-  "thrust_y": "../data/input/dataTables/golubka_V1/Thrusts/Thrust_y_t.txt",
-  "thrust_z": "../data/input/dataTables/golubka_V1/Thrusts/Thrust_z_t.txt",
-  "mass": "../data/input/dataTables/golubka_V1/Mass_t.txt",
-  "Ixx": "../data/input/dataTables/golubka_V1/Inertion/Ix_t.txt",
-  "Iyy": "../data/input/dataTables/golubka_V1/Inertion/Iy_t.txt",
-  "Izz": "../data/input/dataTables/golubka_V1/Inertion/Iz_t.txt",
-  "COM_x": "../data/input/dataTables/golubka_V1/COM/COM_x_t.txt",
-  "COM_y": "../data/input/dataTables/golubka_V1/COM/COM_y_t.txt",
-  "COM_z": "../data/input/dataTables/golubka_V1/COM/COM_z_t.txt",
+  "stop_conditions": {
+    "max_time": 15.0,
+    "main_object_id": 0,
+    "min_height": {
+      "object_id": 0,
+      "value": -0.1
+    },
+    "logic": "OR"
+  },
 
-  "position": [0.0, 0.0, 0.0],
-  "velocity": [48.3, 0.0, 12.9],
-  "euler": [0.0, 0.2618, 0.0],
-  "angular_velocity": [0.0, 0.0, 0.0]
+  "devices": [
+    {
+      "id": 0,
+      "name": "manpad",
+      "config_path": "../config/devices/manpad_v1/manpad_v1.json",
+      "initial_state": {
+        "position": [0.0, 0.0, 0.0],
+        "velocity": [48.3, 0.0, 12.9],
+        "euler": [0.0, 0.2618, 0.0],
+        "angular_velocity": [0.0, 0.0, 0.0]
+      }
+    },
+    {
+      "id": 1,
+      "name": "simple_object",
+      "initial_state": {
+        "position": [100.0, 0.0, 30.0],
+        "velocity": [15.0, 0.0, 0.0],
+        "euler": [0.0, 0.0, 0.0],
+        "angular_velocity": [0.0, 0.0, 0.0]
+      }
+    },
+    {
+      "id": 2,
+      "name": "net_projectile",
+      "config_path": "../config/devices/net_projectile/net_projectile.json",
+      "initial_state": {
+        "position": [-100.0, 0.0, 0.0],
+        "velocity": [25.0, 0.0, 40.0],
+        "euler":    [0.0, 0.0, 0.0],
+        "angular_velocity": [0.0, 0.0, 0.0]
+      }
+    }
+
+  ]
 }

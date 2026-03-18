@@ -84,6 +84,7 @@ void RungeKutta4Solver<metricType, CallbackType>::solve(
                         current_state, current_time, step_size, object->getDynamicSys()
                     );
                     // Создаём копию для momento перед перемещением
+                    //по идее больше тут ничего не нужно, это максиму, однако можно и кватернионы добавить и тд, так что можешь дописать
                     auto new_state_copy = ObjSnapshot<metricType>::createBuilder(new_state->getKinematics())
                         .setTime(new_state->getTime())
                         .setMass(new_state->getMass())

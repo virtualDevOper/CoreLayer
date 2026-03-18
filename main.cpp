@@ -33,7 +33,7 @@ int main() {
         // === 1. ЗАГРУЗКА И ВАЛИДАЦИЯ КОНФИГА ===
         nlohmann::json config;
         {
-            std::ifstream file("../config/simulation_new.json");
+            std::ifstream file("../config/simulation.json");
             if (!file.is_open()) {
                 throw std::runtime_error("Cannot open config: ../config/simulation_new.json");
             }

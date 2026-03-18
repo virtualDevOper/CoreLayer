@@ -1,6 +1,7 @@
 #pragma once
+
 #include "PCH.h"
-#include "KinematicState/KinematicState.h"  // ← НОВАЯ ЗАВИСИМОСТЬ
+#include "KinematicState/KinematicState.h"
 
 /**
  * \brief Полный снимок состояния объекта (кинематика + параметры)
@@ -28,7 +29,7 @@ public:
     [[nodiscard]] const Eigen::Vector3<metricType>& getInertia() const;
     [[nodiscard]] const Eigen::Vector3<metricType>& getTotalForce() const;
     [[nodiscard]] const Eigen::Vector3<metricType>& getTotalMoment() const;
-    
+
     // === ГЕТТЕРЫ АЭРОДИНАМИЧЕСКИХ КОЭФФИЦИЕНТОВ ===
     [[nodiscard]] metricType getAeroCx() const;
     [[nodiscard]] metricType getAeroCy() const;
@@ -51,10 +52,13 @@ public:
         KinematicState<metricType> kinematics_;
         metricType time_ = std::numeric_limits<metricType>::quiet_NaN();
         metricType mass_ = std::numeric_limits<metricType>::quiet_NaN();
-        Eigen::Vector3<metricType> inertia_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
-        Eigen::Vector3<metricType> totalForce_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
-        Eigen::Vector3<metricType> totalMoment_ = Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
-        
+        Eigen::Vector3<metricType> inertia_ =
+            Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
+        Eigen::Vector3<metricType> totalForce_ =
+            Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
+        Eigen::Vector3<metricType> totalMoment_ =
+            Eigen::Vector3<metricType>::Constant(std::numeric_limits<metricType>::quiet_NaN());
+
         // Аэродинамические коэффициенты
         metricType aero_Cx_ = std::numeric_limits<metricType>::quiet_NaN();
         metricType aero_Cy_ = std::numeric_limits<metricType>::quiet_NaN();
@@ -69,16 +73,16 @@ public:
         metricType aero_static_margin_ = std::numeric_limits<metricType>::quiet_NaN();
 
     public:
-        explicit Builder(const KinematicState<metricType>& kinematics) : kinematics_(kinematics) {}
-        static Builder fromKinematics(const KinematicState<metricType>& kinematics) {
-            return Builder(kinematics);
-        }
+        explicit Builder(const KinematicState<metricType>& kinematics);
+
+        static Builder fromKinematics(const KinematicState<metricType>& kinematics);
+
         Builder& setTime(metricType t);
         Builder& setMass(metricType m);
         Builder& setInertia(const Eigen::Vector3<metricType>& i);
         Builder& setTotalForce(const Eigen::Vector3<metricType>& f);
         Builder& setTotalMoment(const Eigen::Vector3<metricType>& m);
-        
+
         // Методы для установки аэродинамических коэффициентов
         Builder& setAeroCx(metricType cx);
         Builder& setAeroCy(metricType cy);
@@ -91,9 +95,10 @@ public:
         Builder& setAeroMach(metricType mach);
         Builder& setAeroXcp(metricType x_cp);
         Builder& setAeroStaticMargin(metricType static_margin);
-        
+
         [[nodiscard]] std::unique_ptr<ObjSnapshot<metricType>> buildUnique() const;
     };
+
     static Builder createBuilder(const KinematicState<metricType>& kinematics);
 
     // === ПАРАМЕТРЫ ДЛЯ СОХРАНЕНИЯ ===
@@ -106,7 +111,7 @@ private:
     Eigen::Vector3<metricType> inertia_;
     Eigen::Vector3<metricType> totalForce_;
     Eigen::Vector3<metricType> totalMoment_;
-    
+
     // Аэродинамические коэффициенты
     metricType aero_Cx_;
     metricType aero_Cy_;
@@ -120,3 +125,5 @@ private:
     metricType aero_x_cp_;
     metricType aero_static_margin_;
 };
+
+#include "ObjSnapshot.tpp"

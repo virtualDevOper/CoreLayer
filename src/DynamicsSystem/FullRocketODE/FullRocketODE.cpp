@@ -246,8 +246,7 @@ Eigen::Vector3<metricType> FullRocketODE<metricType>::computeTotalForcesENU(
 template <typename metricType>
 Eigen::Vector3<metricType> FullRocketODE<metricType>::computeLinearAccelerationENU(
     const Eigen::Vector3<metricType>& F_sum,
-    metricType mass) const
-{
+    metricType mass) {
     return F_sum / mass;
 }
 
@@ -287,5 +286,5 @@ Eigen::Vector3<metricType> FullRocketODE<metricType>::computeAngularAcceleration
     return dOmega_dt;
 }
 
-// Explicit template instantiation
+
 template class FullRocketODE<GLOBAL_CONFIG::PROJECT_TYPE>;

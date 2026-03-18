@@ -51,7 +51,7 @@ add_executable(CoreLayer main.cpp
         src/PhysicalObjects/Aircraft/AbstractAircraft.h
         src/SimulationMomento/SimulationMomento.h
         src/utils/ObjSnapshot.h
-        src/utils/ObjSnapshot.cpp
+        src/utils/ObjSnapshot.tpp
         src/SimulationMomento/SaveStrategy/SaveStrategy.h
         src/SimulationMomento/StateStorage.h
         src/PhysicalObjects/AbstractObject.h
@@ -94,13 +94,15 @@ add_executable(CoreLayer main.cpp
         include/aero_simpi/src/component.cpp
         include/aero_simpi/src/model.cpp
         include/aero_simpi/src/parser.cpp
-        src/DynamicsSystem/Aerodynamics/SimplifiedAeroModel.cpp
-        src/DynamicsSystem/Aerodynamics/SimplifiedAeroModel.h
+        src/DynamicsSystem/Aerodynamics/NetAeroModel.cpp
+        src/DynamicsSystem/Aerodynamics/NetAeroModel.h
         src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.cpp
         src/DynamicsSystem/NetProjectile3DOF/NetProjectile3DOF.h
         src/utils/ParameterProvider/ParameterProviderFactory.h
         include/core/factories/Factories.cpp
         include/core/factories/Factories.h
+        src/PhysicalObjects/Aircraft/Missle/UnGuidedMissle/NetProjectile.cpp
+        src/PhysicalObjects/Aircraft/Missle/UnGuidedMissle/NetProjectile.h
 )
 
 
