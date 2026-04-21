@@ -1,0 +1,17 @@
+{
+  "thrust_x_path": "../data/input/dataTables/golubka_V1/Thrusts/Thrust_x_t.txt",
+  "thrust_y_path": "../data/input/dataTables/golubka_V1/Thrusts/Thrust_y_t.txt",
+  "thrust_z_path": "../data/input/dataTables/golubka_V1/Thrusts/Thrust_z_t.txt",
+
+  "mass_path": "../data/input/dataTables/golubka_V1/Mass_t.txt",
+
+  "Ixx_path": "../data/input/dataTables/golubka_V1/Inertion/Ix_t.txt",
+  "Iyy_path": "../data/input/dataTables/golubka_V1/Inertion/Iy_t.txt",
+  "Izz_path": "../data/input/dataTables/golubka_V1/Inertion/Iz_t.txt",
+
+  "COM_x_path": "../data/input/dataTables/golubka_V1/COM/COM_x_t.txt",
+  "COM_y_path": "../data/input/dataTables/golubka_V1/COM/COM_y_t.txt",
+  "COM_z_path": "../data/input/dataTables/golubka_V1/COM/COM_z_t.txt",
+
+  "aerodynamics_path": "../config/devices/manpad_v1/aerodynamics_rocket_1m.json"
+}
