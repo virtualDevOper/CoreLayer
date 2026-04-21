@@ -269,9 +269,6 @@ Icon?
 *.backup
 *.old
 
-# Core dumps
-core
-core.*
 
 # Profiling data
 *.prof
@@ -284,10 +281,7 @@ core.*
 coverage/
 htmlcov/
 
-# Documentation build
-docs/_build/
-docs/html/
-docs/latex/
+
 
 # Test results
 test_results/
