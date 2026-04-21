@@ -38,16 +38,10 @@ std::unique_ptr<KinematicStateDerivative<metricType>> FullRocketODE<metricType>:
     if (!params_provider) {
         throw std::runtime_error("DynamicParametersProvider is null");
     }
-
-    // === Получение параметров ===
-    // Масса и инерция критичны — используем Strict
     metricType mass = params_provider->getMassStrict(t);
     auto inertia = params_provider->getInertiaStrict(t);
-
-    // Тяга и COM могут отсутствовать — используем fallback на ноль
     auto thrust_body = params_provider->getThrust(t, Eigen::Vector3<metricType>::Zero());
     auto COM = params_provider->getCOM(t, Eigen::Vector3<metricType>::Zero());
-
     const auto& V_ENU = state.getVelocity();
     const auto& euler = state.getEulerAngles();
 

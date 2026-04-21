@@ -23,6 +23,6 @@ struct ObjInitParams {
     // === ПОЗИЦИЯ И ОРИЕНТАЦИЯ ===
     Eigen::Vector3<metricType> position;           // [м]
     Eigen::Vector3<metricType> velocity;           // [м/с]
-    Eigen::Vector3<metricType> eulerAngles;        // [рад]
-    Eigen::Vector3<metricType> angularVelocity;    // [рад/с]
+    Eigen::Vector3<metricType> eulerAngles;        // [радианы]
+    Eigen::Vector3<metricType> angularVelocity;    // [радианы/с]
 };

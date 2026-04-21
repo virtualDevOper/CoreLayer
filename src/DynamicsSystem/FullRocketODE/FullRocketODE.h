@@ -6,12 +6,12 @@
 #include "../../../include/aero_simpi/aerodynamics.h"
 
 /**
- * CONVENTION (ENU - East-North-Up):
+ * СОГЛАШЕНИЕ у меня тут такое (ENU - East-North-Up):
  *
  * Earth frame (ENU):
  *   X_e → East  (горизонтально вправо)
  *   Y_e → North (горизонтально вперёд)
- *   Z_e ↑ Up    (вертикально вверх) ← КЛЮЧЕВОЙ ПРИЗНАК ENU
+ *   Z_e ↑ Up    (вертикально вверх) ← КЛЮЧЕВОЙ ПРИЗНАК ENU в отличии от NED
  *   Gravity: (0, 0, -mg)
  *
  * Body frame (связанная СК ракеты):
@@ -19,24 +19,23 @@
  *   Y_b → Right wing (правый борт)
  *   Z_b ↑ Up
  *
- * Euler angles vector: [psi, theta, gamma]
- *   euler[0] = psi   (yaw/курс)   — поворот вокруг Z_e
+ * Конвенция углов: [psi, theta, gamma]
+ *   euler[0] = psi   (yaw/курс)   — поворот вокруг Z
  *   euler[1] = theta (pitch/тангаж) — поворот вокруг Y'
  *   euler[2] = gamma (roll/крен)   — поворот вокруг X''
  *
- * Rotation sequence: 3-2-1 (ZYX)
+ * Последовательность поворота: 3-2-1 (ZYX)
  *   R_body_to_earth = Rz(psi) · Ry(theta) · Rx(gamma)
  */
 
 /**
- * \brief Full 6DOF rigid body dynamics system for rockets/aircraft.
+ * \brief Полная 6DOF (6 степеней свободы ) система ОДУ для ЗУР (но по идее подо все можно переделать).
  *
- * \tparam metricType Numeric type for calculations.
+ * \tparam metricType Тип данных для метрических величин.
  *
- * \details Implements complete equations of motion including coordinate frame
- * transformations, aerodynamic forces/moments, gravity, and inertial effects.
- * Used by RungeKutta4Solver for trajectory integration.
- */
+* \details Реализует полные уравнения движения по старым книжкам дедов (не про армейских дедов, а реальных дедов{старых типов}).
+* В общем, в падлу расписывать - смотри функцию `get_rhs_derivatives`, там все достаточно просто
+*/
 template <typename metricType>
 class FullRocketODE final : public IDynamicsSystem<metricType> {
 private:

@@ -23,8 +23,9 @@
 #include "src/utils/ObjManager/ObjectManager.h"
 #include "src/utils/SimulationConfig.h"
 #include "include/aero_simpi/aerodynamics.h"
-#include "src/utils/Interpolation/ComponentInterpolationManager.h"
+
 #include "include/core/factories/Factories.h"
+
 
 using json = nlohmann::json;
 
@@ -80,14 +81,11 @@ int main() {
         // === 8. СОЗДАНИЕ ОБЪЕКТОВ ИЗ КОНФИГА ===
         for (const auto& device_cfg : config.at("devices")) {
             const int device_id = device_cfg.at("id").get<int>();
-
-            // ИСПРАВЛЕНО: создаем простой объект вместо цели с конфиг-файлом
             auto device = Factories::createObject(
                 device_cfg.at("name").get<std::string>(),
                 device_cfg,
                 world
             );
-
             manager->addTrackedObject(std::move(device), device_id);
         }
 
@@ -96,7 +94,7 @@ int main() {
             const auto all_objects = manager->getAllObjects();
             std::vector<int> ids;
             ids.reserve(all_objects.size());
-            for (const auto& [id, _] : all_objects) {
+            for (const auto &id: all_objects | std::views::keys) {
                 ids.push_back(id);
             }
             describer->setSimulationObjects(ids);
